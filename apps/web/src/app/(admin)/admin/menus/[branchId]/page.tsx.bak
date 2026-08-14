@@ -1,0 +1,547 @@
+'use client';
+import { useEffect, useState, DragEvent } from 'react';
+import { apiClient } from '@/lib/api-client';
+import { MenuResponse, MenuSectionResponse, MenuItemResponse } from '@qrmenu/shared';
+import { useParams } from 'next/navigation';
+
+export default function MenusAdmin() {
+  const params = useParams();
+  const branchId = params.branchId as string;
+  const [menu, setMenu] = useState<MenuResponse | null>(null);
+  
+  const [newSectionName, setNewSectionName] = useState('');
+  const [newSectionNameAmharic, setNewSectionNameAmharic] = useState('');
+  const [newSectionTimeSlot, setNewSectionTimeSlot] = useState('ALL_DAY');
+  const [isSectionModalOpen, setIsSectionModalOpen] = useState(false);
+
+  const [isItemModalOpen, setIsItemModalOpen] = useState(false);
+  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const [newItemData, setNewItemData] = useState({
+    name: '', nameAmharic: '', description: '', priceInput: '', isAvailable: true, photoUrl: '',
+    dietaryLabels: [] as string[], spiceLevel: 0, prepTimeMin: 0, calories: 0,
+    servingSize: '', isCombo: false, comboItemCount: 0, comboPriceInput: ''
+  });
+  const [file, setFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+
+  const fetchMenu = async () => {
+    try {
+      const data = await apiClient.fetchMenuAdmin(branchId);
+      if (Array.isArray(data)) {
+        if (data.length > 0) {
+          setMenu(data[0]);
+        } else {
+          const newMenu = await apiClient.createMenu(branchId, { name: 'Main Menu' });
+          setMenu({ ...newMenu, sections: [] });
+        }
+      } else if (data) {
+        setMenu({
+          ...data,
+          sections: (data as any).sections || []
+        });
+      }
+    } catch (e) {
+      console.error(e);
+      try {
+        const newMenu = await apiClient.createMenu(branchId, { name: 'Main Menu' });
+        setMenu({ ...newMenu, sections: [] });
+      } catch(err) {
+        console.error(err);
+      }
+    }
+  };
+
+  useEffect(() => {
+    fetchMenu();
+  }, [branchId]);
+
+  const handlePublish = async () => {
+    if (!menu) return;
+    try {
+      await apiClient.publishMenu(menu.id);
+      showToast('Menu published successfully', 'success');
+      fetchMenu();
+    } catch (e) {
+      showToast('Failed to publish', 'error');
+    }
+  };
+
+  const handleCreateSection = async () => {
+    if (!menu) return;
+    try {
+      await apiClient.createSection(menu.id, { name: newSectionName, nameAmharic: newSectionNameAmharic, timeSlot: newSectionTimeSlot, sortOrder: menu.sections.length });
+      setNewSectionName('');
+      setNewSectionNameAmharic('');
+      setNewSectionTimeSlot('ALL_DAY');
+      setIsSectionModalOpen(false);
+      fetchMenu();
+      showToast('Section created', 'success');
+    } catch (e) {
+      showToast('Failed to create section', 'error');
+    }
+  };
+
+  const handleDeleteSection = async (sectionId: string) => {
+    if (!window.confirm('Are you sure you want to delete this section?')) return;
+    try {
+      await apiClient.deleteSection(sectionId);
+      fetchMenu();
+      showToast('Section deleted', 'success');
+    } catch (e) {
+      showToast('Failed to delete section', 'error');
+    }
+  };
+
+  const handleSectionReorder = async (sectionId: string, currentOrder: number, direction: 'up' | 'down') => {
+    try {
+      const newOrder = direction === 'up' ? currentOrder - 1 : currentOrder + 1;
+      await apiClient.updateSection(sectionId, { sortOrder: newOrder });
+      fetchMenu();
+    } catch (e) {
+      showToast('Failed to reorder section', 'error');
+    }
+  };
+
+  const handleItemReorder = async (itemId: string, currentOrder: number, direction: 'up' | 'down') => {
+    try {
+      const newOrder = direction === 'up' ? currentOrder - 1 : currentOrder + 1;
+      await apiClient.updateItem(itemId, { sortOrder: newOrder });
+      fetchMenu();
+    } catch (e) {
+      showToast('Failed to reorder item', 'error');
+    }
+  };
+
+  const openItemModal = (sectionId: string, item?: MenuItemResponse) => {
+    setActiveSectionId(sectionId);
+    if (item) {
+      setEditingItemId(item.id);
+      setNewItemData({
+        name: item.name,
+        nameAmharic: (item as any).nameAmharic || '',
+        description: item.description || '',
+        priceInput: typeof item.price === 'number' ? item.price.toFixed(2) : parseFloat(item.price as any).toFixed(2),
+        isAvailable: item.isAvailable,
+        photoUrl: item.photoUrl || '',
+        dietaryLabels: item.dietaryLabels || [],
+        spiceLevel: item.spiceLevel || 0,
+        prepTimeMin: item.prepTimeMin || 0,
+        calories: item.calories || 0,
+        servingSize: (item as any).servingSize || '',
+        isCombo: (item as any).isCombo || false,
+        comboItemCount: (item as any).comboItemCount || 0,
+        comboPriceInput: (item as any).comboPrice != null ? parseFloat((item as any).comboPrice).toFixed(2) : ''
+      });
+      setPreviewUrl(item.photoUrl || null);
+    } else {
+      setEditingItemId(null);
+      setNewItemData({
+        name: '', nameAmharic: '', description: '', priceInput: '', isAvailable: true, photoUrl: '',
+        dietaryLabels: [], spiceLevel: 0, prepTimeMin: 0, calories: 0,
+        servingSize: '', isCombo: false, comboItemCount: 0, comboPriceInput: ''
+      });
+      setPreviewUrl(null);
+    }
+    setFile(null);
+    setIsItemModalOpen(true);
+  };
+
+  const handleSaveItem = async () => {
+    if (!activeSectionId) return;
+    try {
+      let photoUrl = newItemData.photoUrl;
+      if (file) {
+        const { uploadUrl, publicUrl } = await apiClient.getPresignedUrl({
+          fileName: file.name,
+          contentType: file.type
+        });
+        await fetch(uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+        photoUrl = publicUrl;
+      }
+      
+      const payload = {
+        ...newItemData,
+        photoUrl,
+        price: parseFloat(newItemData.priceInput) || 0,
+        comboPrice: parseFloat(newItemData.comboPriceInput) || undefined,
+        sortOrder: 0
+      };
+
+      if (editingItemId) {
+        await apiClient.updateItem(editingItemId, payload);
+        showToast('Item updated successfully', 'success');
+      } else {
+        await apiClient.createItem(activeSectionId, payload);
+        showToast('Item created successfully', 'success');
+      }
+      
+      setIsItemModalOpen(false);
+      fetchMenu();
+    } catch (e) {
+      showToast(editingItemId ? 'Failed to update item' : 'Failed to create item', 'error');
+    }
+  };
+
+  const handleToggleAvailability = async (itemId: string, isAvailable: boolean) => {
+    try {
+      await apiClient.toggleAvailability(itemId, !isAvailable);
+      fetchMenu();
+    } catch (e) {
+      showToast('Failed to toggle', 'error');
+    }
+  };
+
+  const handleDeleteItem = async (itemId: string) => {
+    if (!window.confirm('Are you sure you want to delete this item?')) return;
+    try {
+      await apiClient.deleteItem(itemId);
+      fetchMenu();
+      showToast('Item deleted', 'success');
+    } catch (e) {
+      showToast('Failed to delete item', 'error');
+    }
+  };
+
+  const handleDrag = (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setDragActive(true);
+    } else if (e.type === 'dragleave') {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const droppedFile = e.dataTransfer.files[0];
+      setFile(droppedFile);
+      setPreviewUrl(URL.createObjectURL(droppedFile));
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const selectedFile = e.target.files[0];
+      setFile(selectedFile);
+      setPreviewUrl(URL.createObjectURL(selectedFile));
+    }
+  };
+
+  if (!menu) return <div>Loading...</div>;
+
+  const statusColor = menu.status === 'PUBLISHED' ? '#10B981' : '#F59E0B';
+  const pulseAnim = menu.status === 'PUBLISHED' ? 'pulse 2s infinite' : 'none';
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <style>{`
+        @keyframes pulse {
+          0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+          70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+      `}</style>
+      
+      {toast && (
+        <div style={{
+          position: 'fixed', top: '1rem', right: '1rem', zIndex: 1000,
+          background: toast.type === 'success' ? 'var(--color-success, #10B981)' : 'var(--color-error, #EF4444)',
+          color: 'white', padding: '1rem', borderRadius: '0.5rem', boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+          transition: 'opacity 0.3s'
+        }}>
+          {toast.message}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <h1>Menu Editor</h1>
+          <span style={{
+            background: statusColor, color: 'white', padding: '0.25rem 0.75rem', 
+            borderRadius: '9999px', fontSize: '0.875rem', fontWeight: 'bold',
+            animation: pulseAnim
+          }}>
+            {menu.status || 'DRAFT'}
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: '1rem' }}>
+          <button className="btn" onClick={() => setIsSectionModalOpen(true)}>Add Section</button>
+          <button className="btn btn-primary" onClick={handlePublish}>Publish Menu</button>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+        {menu.sections.map((section, sIndex) => (
+          <div key={section.id} className="card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--color-border)', paddingBottom: '1rem', marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <button onClick={() => handleSectionReorder(section.id, section.sortOrder, 'up')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem' }}>▲</button>
+                  <button onClick={() => handleSectionReorder(section.id, section.sortOrder, 'down')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem' }}>▼</button>
+                </div>
+                <h2>{section.name}</h2>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button className="btn" onClick={() => openItemModal(section.id)}>Add Item</button>
+                <button className="btn" style={{ color: 'var(--color-error)' }} onClick={() => handleDeleteSection(section.id)}>Delete Section</button>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '1rem' }}>
+              {section.items.map((item, iIndex) => (
+                <div key={item.id} style={{ border: '1px solid var(--color-border)', borderRadius: '0.5rem', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {item.photoUrl && <img src={item.photoUrl} alt={item.name} style={{ width: '100%', height: '150px', objectFit: 'cover', borderRadius: '0.25rem' }} />}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <h3 style={{ margin: 0 }}>{item.name}</h3>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <button onClick={() => handleItemReorder(item.id, item.sortOrder, 'up')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>▲</button>
+                      <button onClick={() => handleItemReorder(item.id, item.sortOrder, 'down')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>▼</button>
+                    </div>
+                  </div>
+                  <p style={{ margin: 0, color: 'var(--color-text-muted)' }}>{item.description}</p>
+                  <p style={{ margin: 0, fontWeight: 'bold' }}>
+                    ETB {typeof item.price === 'number' ? item.price.toFixed(2) : parseFloat(item.price as any).toFixed(2)}
+                  </p>
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: 'auto', paddingTop: '1rem', flexWrap: 'wrap' }}>
+                    <button className="btn" style={{ flex: 1, border: '1px solid var(--color-border)' }} onClick={() => handleToggleAvailability(item.id, item.isAvailable)}>
+                      {item.isAvailable ? 'Available' : 'Unavailable'}
+                    </button>
+                    <button className="btn" style={{ flex: 1, border: '1px solid var(--color-border)' }} onClick={() => openItemModal(section.id, item)}>Edit</button>
+                    <button className="btn" style={{ color: 'var(--color-error)', border: '1px solid var(--color-border)', width: '100%' }} onClick={() => handleDeleteItem(item.id)}>Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {isSectionModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
+          <div className="card" style={{ width: '400px' }}>
+            <h2>Create Section</h2>
+            <input 
+              type="text" 
+              placeholder="Section Name" 
+              value={newSectionName}
+              onChange={e => setNewSectionName(e.target.value)}
+              style={{ width: '100%', padding: '0.5rem', marginBottom: '1rem', background: 'var(--color-admin-bg)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+            />
+            <input 
+              type="text" 
+              placeholder="Amharic Name (e.g. የጾም ምግቦች)" 
+              value={newSectionNameAmharic}
+              onChange={e => setNewSectionNameAmharic(e.target.value)}
+              style={{ width: '100%', padding: '0.5rem', marginBottom: '1rem', background: 'var(--color-admin-bg)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+            />
+            <select
+              value={newSectionTimeSlot}
+              onChange={e => setNewSectionTimeSlot(e.target.value)}
+              style={{ width: '100%', padding: '0.5rem', marginBottom: '1rem', background: 'var(--color-admin-bg)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+            >
+              <option value="ALL_DAY">All Day</option>
+              <option value="BREAKFAST">Breakfast / ቁርስ</option>
+              <option value="LUNCH_DINNER">Lunch & Dinner</option>
+            </select>
+            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+              <button className="btn" onClick={() => setIsSectionModalOpen(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleCreateSection}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isItemModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100, overflowY: 'auto', padding: '2rem 0' }}>
+          <div className="card" style={{ width: '500px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <h2>{editingItemId ? 'Edit Item' : 'Create Item'}</h2>
+            
+            <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem' }}>Name</label>
+            <input 
+              type="text" 
+              placeholder="Item Name" 
+              value={newItemData.name}
+              onChange={e => setNewItemData({...newItemData, name: e.target.value})}
+              style={{ width: '100%', padding: '0.5rem', marginBottom: '1rem', background: 'var(--color-admin-bg)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+            />
+
+            <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem' }}>Amharic Name</label>
+            <input 
+              type="text" 
+              placeholder="Amharic Name (e.g. ድሮ ወጥ)" 
+              value={newItemData.nameAmharic}
+              onChange={e => setNewItemData({...newItemData, nameAmharic: e.target.value})}
+              style={{ width: '100%', padding: '0.5rem', marginBottom: '1rem', background: 'var(--color-admin-bg)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+            />
+            
+            <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem' }}>Description</label>
+            <textarea 
+              placeholder="Description" 
+              value={newItemData.description}
+              onChange={e => setNewItemData({...newItemData, description: e.target.value})}
+              style={{ width: '100%', padding: '0.5rem', marginBottom: '1rem', background: 'var(--color-admin-bg)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+            />
+            
+            <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem' }}>Price (ETB)</label>
+            <input 
+              type="number" 
+              step="0.01"
+              placeholder="e.g. 25.00" 
+              value={newItemData.priceInput}
+              onChange={e => setNewItemData({...newItemData, priceInput: e.target.value})}
+              style={{ width: '100%', padding: '0.5rem', marginBottom: '1rem', background: 'var(--color-admin-bg)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+            />
+
+            <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem' }}>Dietary Labels</label>
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+              {['VEGAN', 'GF', 'HALAL', 'SPICY', 'FASTING'].map(label => (
+                <label key={label} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                  <input 
+                    type="checkbox"
+                    checked={newItemData.dietaryLabels.includes(label)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setNewItemData({ ...newItemData, dietaryLabels: [...newItemData.dietaryLabels, label] });
+                      } else {
+                        setNewItemData({ ...newItemData, dietaryLabels: newItemData.dietaryLabels.filter(l => l !== label) });
+                      }
+                    }}
+                  />
+                  <span style={{ fontSize: '0.875rem' }}>{label === 'FASTING' ? '🕌 Fasting / የጾም' : label}</span>
+                </label>
+              ))}
+            </div>
+
+            <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem' }}>Serving Size</label>
+            <input 
+              type="text" 
+              placeholder="e.g. Serves 2-3 or Single Portion" 
+              value={newItemData.servingSize}
+              onChange={e => setNewItemData({...newItemData, servingSize: e.target.value})}
+              style={{ width: '100%', padding: '0.5rem', marginBottom: '1rem', background: 'var(--color-admin-bg)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+            />
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+              <input 
+                type="checkbox"
+                checked={newItemData.isCombo}
+                onChange={e => setNewItemData({...newItemData, isCombo: e.target.checked})}
+              />
+              <span style={{ fontSize: '0.875rem' }}>This is a Combo / Beyaynetu Platter</span>
+            </label>
+
+            {newItemData.isCombo && (
+              <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem' }}>Combo Item Count</label>
+                  <input 
+                    type="number" 
+                    min="0"
+                    placeholder="e.g. 6"
+                    value={newItemData.comboItemCount}
+                    onChange={e => setNewItemData({...newItemData, comboItemCount: parseInt(e.target.value) || 0})}
+                    style={{ width: '100%', padding: '0.5rem', background: 'var(--color-admin-bg)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem' }}>Combo Price</label>
+                  <input 
+                    type="number"
+                    step="0.01"
+                    placeholder="e.g. 150.00"
+                    value={newItemData.comboPriceInput}
+                    onChange={e => setNewItemData({...newItemData, comboPriceInput: e.target.value})}
+                    style={{ width: '100%', padding: '0.5rem', background: 'var(--color-admin-bg)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem' }}>Spice Level (0-3)</label>
+                <input 
+                  type="number" 
+                  min="0" max="3"
+                  value={newItemData.spiceLevel}
+                  onChange={e => setNewItemData({...newItemData, spiceLevel: parseInt(e.target.value) || 0})}
+                  style={{ width: '100%', padding: '0.5rem', background: 'var(--color-admin-bg)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem' }}>Prep Time (min)</label>
+                <input 
+                  type="number" 
+                  min="0"
+                  value={newItemData.prepTimeMin}
+                  onChange={e => setNewItemData({...newItemData, prepTimeMin: parseInt(e.target.value) || 0})}
+                  style={{ width: '100%', padding: '0.5rem', background: 'var(--color-admin-bg)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem' }}>Calories</label>
+                <input 
+                  type="number" 
+                  min="0"
+                  value={newItemData.calories}
+                  onChange={e => setNewItemData({...newItemData, calories: parseInt(e.target.value) || 0})}
+                  style={{ width: '100%', padding: '0.5rem', background: 'var(--color-admin-bg)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+                />
+              </div>
+            </div>
+
+            <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem' }}>Photo</label>
+            <div 
+              onDragEnter={handleDrag}
+              onDragLeave={handleDrag}
+              onDragOver={handleDrag}
+              onDrop={handleDrop}
+              style={{
+                border: dragActive ? '2px dashed var(--color-primary, #3B82F6)' : '2px dashed var(--color-border)',
+                borderRadius: '0.5rem', padding: '2rem', textAlign: 'center', marginBottom: '1rem',
+                background: dragActive ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+                cursor: 'pointer', position: 'relative'
+              }}
+            >
+              <input 
+                type="file" 
+                accept="image/*"
+                onChange={handleFileChange}
+                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }}
+              />
+              {previewUrl ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                  <img src={previewUrl} alt="Preview" style={{ maxWidth: '100%', maxHeight: '150px', objectFit: 'contain' }} />
+                  <span style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>Click or drag to change image</span>
+                </div>
+              ) : (
+                <div style={{ color: 'var(--color-text-muted)' }}>
+                  <p>Drag & drop an image here, or click to select</p>
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginTop: '1rem' }}>
+              <button className="btn" onClick={() => setIsItemModalOpen(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleSaveItem}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
