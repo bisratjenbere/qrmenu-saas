@@ -1,0 +1,313 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ──────────────────────────────────────────
+
+enum QrMode {
+  SINGLE
+  PER_TABLE
+}
+
+enum MenuStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum OrderStatus {
+  NEW
+  SEEN
+  SERVED
+}
+
+enum StaffRole {
+  SUPER_ADMIN
+  ADMIN
+  STAFF
+}
+
+enum CompanyStatus {
+  ACTIVE
+  SUSPENDED
+  TRIAL
+}
+
+enum PlanTier {
+  PILOT
+  SCALE
+  ENTERPRISE
+}
+
+enum OrderItemStatus {
+  PENDING
+  PREPARING
+  READY
+}
+
+enum DomainStatus {
+  PENDING
+  VERIFIED
+  FAILED
+}
+
+enum InvoiceStatus {
+  PENDING
+  PAID
+  OVERDUE
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  TELEBIRR
+  WIRE
+  CASH
+}
+
+// ─── Company ────────────────────────────────────────
+
+model Company {
+  id        String        @id @default(uuid())
+  name      String
+  slug      String        @unique
+  status    CompanyStatus @default(ACTIVE)
+  planTier  PlanTier      @default(SCALE) @map("plan_tier")
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  branches Branch[]
+  staff    Staff[]
+  domains  CustomDomain[]
+  invoices TenantInvoice[]
+
+  @@map("companies")
+}
+
+// ─── Branch ─────────────────────────────────────────
+
+model Branch {
+  id                   String   @id @default(uuid())
+  companyId            String   @map("company_id")
+  name                 String
+  slug                 String   @unique
+  qrMode               QrMode   @default(SINGLE) @map("qr_mode")
+  coverImageUrl        String?  @map("cover_image_url")
+  tagline              String?
+  currency             String   @default("ETB")
+  serviceChargePercent Float    @default(0) @map("service_charge_percent")
+  vatPercent           Float    @default(0) @map("vat_percent")
+  themeId              String   @default("mesob-classic") @map("theme_id")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  menus   Menu[]
+  tables  Table[]
+  orders  Order[]
+  staff   Staff[]
+
+  @@map("branches")
+}
+
+// ─── Staff ──────────────────────────────────────────
+
+model Staff {
+  id           String    @id @default(uuid())
+  companyId    String?   @map("company_id")
+  branchId     String?   @map("branch_id")
+  name         String
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  role         StaffRole @default(STAFF)
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  branch  Branch?  @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  @@map("staff")
+}
+
+// ─── Table ──────────────────────────────────────────
+
+model Table {
+  id       String @id @default(uuid())
+  branchId String @map("branch_id")
+  label    String
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, label])
+  @@map("tables")
+}
+
+// ─── Menu ───────────────────────────────────────────
+
+model Menu {
+  id        String     @id @default(uuid())
+  branchId  String     @map("branch_id")
+  name      String     @default("Main Menu")
+  status    MenuStatus @default(DRAFT)
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  branch   Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  sections MenuSection[]
+
+  @@map("menus")
+}
+
+// ─── MenuSection ────────────────────────────────────
+
+model MenuSection {
+  id          String  @id @default(uuid())
+  menuId      String  @map("menu_id")
+  name        String
+  nameAmharic String? @map("name_amharic")
+  sortOrder   Int     @default(0) @map("sort_order")
+  timeSlot    String  @default("ALL_DAY") @map("time_slot")
+
+  menu  Menu       @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  items MenuItem[]
+
+  @@map("menu_sections")
+}
+
+// ─── MenuItem ───────────────────────────────────────
+
+model MenuItem {
+  id              String   @id @default(uuid())
+  sectionId       String   @map("section_id")
+  name            String
+  nameAmharic     String?  @map("name_amharic")
+  description     String?
+  price           Decimal  @db.Decimal(10, 2)
+  photoUrl        String?  @map("photo_url")
+  isAvailable     Boolean          @default(true) @map("is_available")
+  sortOrder       Int              @default(0) @map("sort_order")
+  popularityScore Int              @default(0) @map("popularity_score")
+  dietaryLabels   String[]         @default([])
+  allergens       String[]         @default([])
+  spiceLevel      Int              @default(0) @map("spice_level")
+  prepTimeMin     Int?             @map("prep_time_min")
+  calories        Int?
+  servingSize     String?          @map("serving_size")
+  isCombo         Boolean          @default(false) @map("is_combo")
+  comboItemCount  Int?             @map("combo_item_count")
+  comboPrice      Decimal?         @map("combo_price") @db.Decimal(10, 2)
+  orderItems      OrderItem[]
+  upsellSources   MenuItemUpsell[] @relation("sourceItem")
+  upsellTargets   MenuItemUpsell[] @relation("targetItem")
+
+  section MenuSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@map("menu_items")
+}
+
+// ─── Order ──────────────────────────────────────────
+
+model Order {
+  id             String      @id @default(uuid())
+  branchId       String      @map("branch_id")
+  tableNumber    String      @map("table_number")
+  status         OrderStatus @default(NEW)
+  idempotencyKey String      @unique @map("idempotency_key")
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  branch Branch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  items  OrderItem[]
+
+  @@map("orders")
+}
+
+// ─── OrderItem ──────────────────────────────────────
+
+model OrderItem {
+  id               String  @id @default(uuid())
+  orderId          String  @map("order_id")
+  menuItemId       String  @map("menu_item_id")
+  itemNameSnapshot String          @map("item_name_snapshot")
+  priceSnapshot    Decimal         @map("price_snapshot") @db.Decimal(10, 2)
+  quantity         Int
+  notes            String?
+  status           OrderItemStatus @default(PENDING)
+
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id])
+
+  @@map("order_items")
+}
+
+// ─── MenuItemUpsell ─────────────────────────────────
+
+model MenuItemUpsell {
+  id           String @id @default(uuid())
+  sourceItemId String @map("source_item_id")
+  targetItemId String @map("target_item_id")
+
+  sourceItem MenuItem @relation("sourceItem", fields: [sourceItemId], references: [id], onDelete: Cascade)
+  targetItem MenuItem @relation("targetItem", fields: [targetItemId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceItemId, targetItemId])
+  @@map("menu_item_upsells")
+}
+
+// ─── CustomDomain ────────────────────────────────────
+
+model CustomDomain {
+  id        String       @id @default(uuid())
+  companyId String       @map("company_id")
+  domain    String       @unique
+  status    DomainStatus @default(PENDING)
+  sslActive Boolean      @default(false) @map("ssl_active")
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("custom_domains")
+}
+
+// ─── MenuPresetTemplate ──────────────────────────────
+
+model MenuPresetTemplate {
+  id           String   @id @default(uuid())
+  name         String
+  nameAmharic  String?  @map("name_amharic")
+  description  String?
+  category     String   @default("General")
+  sectionsJson String   @map("sections_json")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("menu_preset_templates")
+}
+
+// ─── TenantInvoice ───────────────────────────────────
+
+model TenantInvoice {
+  id            String        @id @default(uuid())
+  companyId     String        @map("company_id")
+  invoiceNumber String        @unique @map("invoice_number")
+  amount        Decimal       @db.Decimal(10, 2)
+  currency      String        @default("ETB")
+  status        InvoiceStatus @default(PENDING)
+  paymentMethod PaymentMethod @default(BANK_TRANSFER) @map("payment_method")
+  dueDate       DateTime      @map("due_date")
+  paidAt        DateTime?     @map("paid_at")
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_invoices")
+}
+
+// ─── SystemSetting ───────────────────────────────────
+
+model SystemSetting {
+  key         String   @id
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("system_settings")
+}
