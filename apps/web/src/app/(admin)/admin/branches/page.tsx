@@ -68,6 +68,7 @@ export default function Branches() {
             <p style={{ margin: 0, color: 'var(--color-text-muted)' }}>/{branch.slug}</p>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <button className="btn" style={{ flex: 1, border: '1px solid var(--color-border)' }} onClick={() => router.push(`/admin/menus/${branch.id}`)}>Menu</button>
+              <button className="btn" style={{ flex: 1, border: '1px solid var(--color-border)' }} onClick={() => router.push(`/admin/branches/${branch.id}`)}>Profile</button>
               <button className="btn" style={{ flex: 1, border: '1px solid var(--color-border)' }} onClick={() => router.push(`/admin/tables/${branch.id}`)}>Tables</button>
               <button className="btn" style={{ flex: 1, border: '1px solid var(--color-border)' }} onClick={() => router.push(`/admin/qr/${branch.id}`)}>QR</button>
             </div>

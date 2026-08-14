@@ -272,6 +272,21 @@ export default function GuestMenu({
         </div>
       </header>
 
+      {(branch.description || branch.address || branch.phone || branch.mapUrl) && (
+        <section className="guest-profile" aria-label="Restaurant information">
+          {branch.description && <p>{branch.description}</p>}
+          <div className="guest-profile-links">
+            {branch.address && <span>{branch.address}</span>}
+            {branch.phone && <a href={`tel:${branch.phone}`}>Call</a>}
+            {branch.mapUrl && (
+              <a href={branch.mapUrl} target="_blank" rel="noreferrer">
+                Directions
+              </a>
+            )}
+          </div>
+        </section>
+      )}
+
       {!isOnline && (
         <div className="guest-banner offline" role="alert">Offline — browsing cached menu</div>
       )}
@@ -355,9 +370,9 @@ export default function GuestMenu({
         </div>
       )}
 
-      {branch.callWaiterEnabled && (
+      {(branch.callWaiterEnabled || branch.whatsappNumber) && (
         <div className="guest-actions">
-          <button type="button">{t('call_waiter')}</button>
+          {branch.callWaiterEnabled && <button type="button">{t('call_waiter')}</button>}
           {branch.requestBillEnabled && <button type="button">{t('request_bill')}</button>}
           {branch.whatsappNumber && (
             <a href={`https://wa.me/${branch.whatsappNumber}`}>{t('whatsapp')}</a>
@@ -509,6 +524,10 @@ export default function GuestMenu({
         .guest-tagline, .guest-context { margin: 0.25rem 0 0; font-size: 0.85rem; opacity: 0.9; }
         .guest-lang-btn { margin-left: auto; padding: 0.35rem 0.6rem; border: 1px solid rgba(255,255,255,0.5); background: transparent; color: #fff; border-radius: 6px; cursor: pointer; }
         .guest-nav { position: sticky; top: 0; z-index: 20; display: flex; gap: 0.35rem; padding: 0.5rem; background: #fff; border-bottom: 1px solid #e7e5e4; overflow-x: auto; }
+        .guest-profile { padding: 0.75rem 1rem; background: #fff; border-bottom: 1px solid #e7e5e4; font-size: 0.9rem; }
+        .guest-profile p { margin: 0 0 0.4rem; color: #57534e; }
+        .guest-profile-links { display: flex; flex-wrap: wrap; gap: 0.65rem; align-items: center; }
+        .guest-profile-links a { color: var(--color-primary, #b45309); font-weight: 700; }
         .guest-nav button { flex-shrink: 0; padding: 0.4rem 0.75rem; border: 1px solid #d6d3d1; background: #fff; border-radius: 999px; font-size: 0.8rem; cursor: pointer; }
         .guest-nav button.active { background: var(--color-primary, #b45309); color: #fff; border-color: transparent; }
         .guest-main { padding: 1rem; }

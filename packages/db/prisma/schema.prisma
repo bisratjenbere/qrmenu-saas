@@ -121,6 +121,15 @@ model Branch {
   coverImageUrl        String?         @map("cover_image_url")
   logoUrl              String?         @map("logo_url")
   tagline              String?
+  description          String?         @db.Text
+  phone                String?
+  address              String?
+  mapUrl               String?         @map("map_url")
+  wifiSsid             String?         @map("wifi_ssid")
+  wifiPassword         String?         @map("wifi_password")
+  openingHoursJson     String?         @map("opening_hours_json") @db.Text
+  instagramUrl         String?         @map("instagram_url")
+  facebookUrl          String?         @map("facebook_url")
   currency             String          @default("ETB")
   serviceChargePercent Float           @default(0) @map("service_charge_percent")
   vatPercent           Float           @default(0) @map("vat_percent")
