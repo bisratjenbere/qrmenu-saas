@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  traefik:
+    image: traefik:v3.0
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik:/etc/traefik
+      - letsencrypt:/letsencrypt
+    networks:
+      - qrmenu-network
+
+  api:
+    image: ghcr.io/${GITHUB_REPOSITORY:-qrmenu}/api:latest
+    restart: unless-stopped
+    stop_grace_period: 15s
+    expose:
+      - "3001"
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-qrmenu}?schema=public
+      - JWT_SECRET=${JWT_SECRET}
+      - R2_ACCOUNT_ID=${R2_ACCOUNT_ID}
+      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}
+      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}
+      - R2_BUCKET_NAME=${R2_BUCKET_NAME}
+      - R2_PUBLIC_URL=${R2_PUBLIC_URL}
+      - CORS_ORIGIN=https://${DOMAIN_NAME}
+      - NODE_ENV=production
+      - PORT=3001
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=Host(`api.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.api.entrypoints=websecure"
+      - "traefik.http.routers.api.tls.certresolver=myresolver"
+      - "traefik.http.services.api.loadbalancer.server.port=3001"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - qrmenu-network
+
+  web:
+    image: ghcr.io/${GITHUB_REPOSITORY:-qrmenu}/web:latest
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - NEXT_PUBLIC_API_URL=https://api.${DOMAIN_NAME}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.web.rule=Host(`${DOMAIN_NAME}`)"
+      - "traefik.http.routers.web.entrypoints=websecure"
+      - "traefik.http.routers.web.tls.certresolver=myresolver"
+      - "traefik.http.services.web.loadbalancer.server.port=3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - qrmenu-network
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-qrmenu}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-qrmenu}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - qrmenu-network
+
+volumes:
+  pgdata:
+  letsencrypt:
+
+networks:
+  qrmenu-network:
+    driver: bridge
