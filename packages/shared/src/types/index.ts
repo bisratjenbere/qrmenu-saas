@@ -1,18 +1,56 @@
 // ─── API Response Types ─────────────────────────────
-// Used by both the API (response shaping) and the frontend (typed fetch).
+
+import type {
+  ServiceMode,
+  QrMode,
+  FulfillmentType,
+  PrimaryLanguage,
+  TableInputMode,
+} from '../constants';
+import type { DietaryLabel } from '../constants/dietary';
+
+export interface ModifierOptionResponse {
+  id: string;
+  name: string;
+  nameAmharic?: string | null;
+  priceDelta: number;
+  isAvailable: boolean;
+  sortOrder: number;
+}
+
+export interface ModifierGroupResponse {
+  id: string;
+  name: string;
+  nameAmharic?: string | null;
+  required: boolean;
+  minSelect: number;
+  maxSelect: number;
+  sortOrder: number;
+  options: ModifierOptionResponse[];
+}
 
 export interface BranchResponse {
   id: string;
   name: string;
   slug: string;
-  qrMode: 'SINGLE' | 'PER_TABLE';
+  qrMode: QrMode;
+  serviceMode: ServiceMode;
   companyId: string;
   coverImageUrl?: string | null;
+  logoUrl?: string | null;
   tagline?: string | null;
   currency?: string;
   serviceChargePercent?: number;
   vatPercent?: number;
   themeId?: string;
+  primaryLanguage?: PrimaryLanguage;
+  tableInputMode?: TableInputMode;
+  enableTakeaway?: boolean;
+  enableRoomService?: boolean;
+  callWaiterEnabled?: boolean;
+  requestBillEnabled?: boolean;
+  whatsappNumber?: string | null;
+  setupStep?: number;
 }
 
 export interface MenuItemResponse {
@@ -20,13 +58,16 @@ export interface MenuItemResponse {
   name: string;
   nameAmharic?: string | null;
   description: string | null;
+  descriptionAmharic?: string | null;
   price: number;
   photoUrl: string | null;
   isAvailable: boolean;
+  unavailableReason?: string | null;
+  unavailableUntil?: string | null;
   sortOrder: number;
   popularityScore: number;
   upsellIds?: string[];
-  dietaryLabels?: string[];
+  dietaryLabels?: DietaryLabel[];
   allergens?: string[];
   spiceLevel?: number;
   prepTimeMin?: number | null;
@@ -35,6 +76,7 @@ export interface MenuItemResponse {
   isCombo?: boolean;
   comboItemCount?: number | null;
   comboPrice?: number | null;
+  modifierGroups?: ModifierGroupResponse[];
 }
 
 export interface MenuSectionResponse {
@@ -43,45 +85,81 @@ export interface MenuSectionResponse {
   nameAmharic?: string | null;
   sortOrder: number;
   timeSlot?: string;
+  isVisible?: boolean;
   items: MenuItemResponse[];
 }
 
 export interface MenuResponse {
   id: string;
   name: string;
-  status: 'DRAFT' | 'PUBLISHED';
+  status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
+  version?: number;
   branch: {
     id: string;
     name: string;
     slug: string;
-    qrMode: 'SINGLE' | 'PER_TABLE';
+    qrMode: QrMode;
+    serviceMode: ServiceMode;
     coverImageUrl?: string | null;
+    logoUrl?: string | null;
     tagline?: string | null;
     currency?: string;
     serviceChargePercent?: number;
     vatPercent?: number;
+    primaryLanguage?: PrimaryLanguage;
+    tableInputMode?: TableInputMode;
+    enableTakeaway?: boolean;
+    enableRoomService?: boolean;
+    callWaiterEnabled?: boolean;
+    requestBillEnabled?: boolean;
+    whatsappNumber?: string | null;
   };
   sections: MenuSectionResponse[];
 }
 
+export interface OrderLineModifierSnapshot {
+  groupId: string;
+  groupName: string;
+  optionId: string;
+  optionName: string;
+  priceDelta: number;
+}
+
 export interface OrderItemResponse {
   id: string;
+  clientLineId: string;
   menuItemId: string;
   itemNameSnapshot: string;
+  itemNameAmSnapshot?: string | null;
   priceSnapshot: number;
+  modifiersSnapshot: OrderLineModifierSnapshot[];
+  lineTotal: number;
   quantity: number;
   notes: string | null;
   status: 'PENDING' | 'PREPARING' | 'READY';
 }
 
-export interface OrderResponse {
+export interface OrderMoneyResponse {
+  currency: string;
+  subtotal: number;
+  serviceChargeRate: number;
+  serviceChargeAmount: number;
+  vatRate: number;
+  vatAmount: number;
+  grandTotal: number;
+}
+
+export interface OrderResponse extends OrderMoneyResponse {
   id: string;
   branchId: string;
   tableNumber: string;
+  fulfillmentType: FulfillmentType;
+  tableId?: string | null;
   status: 'NEW' | 'SEEN' | 'SERVED';
   idempotencyKey: string;
   createdAt: string;
   items: OrderItemResponse[];
+  /** @deprecated use grandTotal */
   total: number;
 }
 
@@ -89,6 +167,14 @@ export interface TableResponse {
   id: string;
   branchId: string;
   label: string;
+  qrToken?: string;
+}
+
+export interface TableContextResponse {
+  tableId: string;
+  label: string;
+  branchSlug: string;
+  locked: boolean;
 }
 
 export interface StaffResponse {
@@ -173,6 +259,19 @@ export interface SystemSettingResponse {
   updatedAt: string;
 }
 
+export interface PublishPreflightResult {
+  canPublish: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+export interface TemplateImpactPreview {
+  sectionsToReplace: number;
+  itemsToReplace: number;
+  modifierGroupsAffected: number;
+  backupAvailable: boolean;
+}
+
 // ─── SSE Event Types ────────────────────────────────
 
 export interface SSENewOrderEvent {
@@ -185,6 +284,15 @@ export interface SSEOrderUpdatedEvent {
   data: {
     id: string;
     status: 'NEW' | 'SEEN' | 'SERVED';
+  };
+}
+
+export interface SSEOrderItemUpdatedEvent {
+  type: 'order-item-updated';
+  data: {
+    id: string;
+    orderId: string;
+    status: 'PENDING' | 'PREPARING' | 'READY';
   };
 }
 
@@ -201,10 +309,9 @@ export interface SSEShutdownEvent {
 export type SSEEvent =
   | SSENewOrderEvent
   | SSEOrderUpdatedEvent
+  | SSEOrderItemUpdatedEvent
   | SSEHeartbeatEvent
   | SSEShutdownEvent;
-
-// ─── API Error Response ─────────────────────────────
 
 export interface ApiErrorResponse {
   error: {

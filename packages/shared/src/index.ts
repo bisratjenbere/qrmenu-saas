@@ -4,3 +4,7 @@ export * from './types';
 export * from './constants/ethiopian-dishes';
 export * from './constants/menu-themes';
 export * from './constants/admin-translations';
+export * from './constants/customer-translations';
+export * from './constants/dietary';
+export * from './constants/modifier-presets';
+export * from './utils/money';

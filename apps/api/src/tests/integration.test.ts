@@ -5,8 +5,34 @@ import { randomUUID } from 'crypto';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { signToken } from '../middleware/auth.middleware.js';
+import { FulfillmentType } from '@qrmenu/shared';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production-minimum-32-chars-long';
+
+function orderLine(menuItemId: string, quantity = 1, notes?: string | null) {
+  return {
+    clientLineId: randomUUID(),
+    menuItemId,
+    quantity,
+    notes: notes ?? undefined,
+    selectedModifiers: [] as never[],
+  };
+}
+
+function perTableOrderPayload(
+  branchId: string,
+  tableToken: string,
+  items: ReturnType<typeof orderLine>[],
+  idempotencyKey = randomUUID()
+) {
+  return {
+    branchId,
+    fulfillmentType: FulfillmentType.DINE_IN,
+    tableToken,
+    idempotencyKey,
+    items,
+  };
+}
 
 describe('🚀 Integration & Security Hardening Tests', () => {
   let companyA: any;
@@ -23,6 +49,7 @@ describe('🚀 Integration & Security Hardening Tests', () => {
   let activeSectionX: any;
   let itemAvailableX: any;
   let itemUnavailableX: any;
+  let tableTokenX: string;
   let orderX: any;
   let orderY: any;
 
@@ -41,10 +68,23 @@ describe('🚀 Integration & Security Hardening Tests', () => {
 
     // 2. Create Branches
     branchX = await prisma.branch.create({
-      data: { companyId: companyA.id, name: 'Branch X', slug: `branch-x-${Date.now()}`, qrMode: 'PER_TABLE' }
+      data: {
+        companyId: companyA.id,
+        name: 'Branch X',
+        slug: `branch-x-${Date.now()}`,
+        qrMode: 'PER_TABLE',
+        serviceMode: 'PER_TABLE_QR',
+      },
     });
     branchY = await prisma.branch.create({
-      data: { companyId: companyB.id, name: 'Branch Y', slug: `branch-y-${Date.now()}`, qrMode: 'PER_TABLE' }
+      data: {
+        companyId: companyB.id,
+        name: 'Branch Y',
+        slug: `branch-y-${Date.now()}`,
+        qrMode: 'SINGLE',
+        serviceMode: 'SINGLE_QR_SELF_ORDER',
+        tableInputMode: 'VALIDATED',
+      },
     });
 
     // 3. Create Tables
@@ -54,6 +94,8 @@ describe('🚀 Integration & Security Hardening Tests', () => {
         { branchId: branchY.id, label: '2' }
       ]
     });
+    const tableX = await prisma.table.findFirst({ where: { branchId: branchX.id, label: '1' } });
+    tableTokenX = tableX!.qrToken;
 
     // 4. Create Staff
     staffX = await prisma.staff.create({
@@ -112,13 +154,18 @@ describe('🚀 Integration & Security Hardening Tests', () => {
         tableNumber: '2',
         idempotencyKey: randomUUID(),
         status: 'NEW',
+        subtotal: 12.5,
+        grandTotal: 12.5,
         items: {
           create: [
             {
               menuItemId: itemAvailableY.id,
+              clientLineId: randomUUID(),
               itemNameSnapshot: itemAvailableY.name,
               priceSnapshot: itemAvailableY.price,
-              quantity: 1
+              lineTotal: 12.5,
+              quantity: 1,
+              modifiersSnapshot: [],
             }
           ]
         }
@@ -142,13 +189,18 @@ describe('🚀 Integration & Security Hardening Tests', () => {
         tableNumber: '1',
         idempotencyKey: randomUUID(),
         status: 'NEW',
+        subtotal: 21.98,
+        grandTotal: 21.98,
         items: {
           create: [
             {
               menuItemId: itemAvailableX.id,
+              clientLineId: randomUUID(),
               itemNameSnapshot: itemAvailableX.name,
               priceSnapshot: itemAvailableX.price,
-              quantity: 2
+              lineTotal: 21.98,
+              quantity: 2,
+              modifiersSnapshot: [],
             }
           ]
         }
@@ -193,34 +245,29 @@ describe('🚀 Integration & Security Hardening Tests', () => {
 
   // ─── 2. Order Validation Tests ─────────────────────────────
   describe('🍔 Order Validation Checks', () => {
-    it('should reject order if table label does not exist', async () => {
+    it('should reject order if table token is invalid', async () => {
       const response = await fastify.inject({
         method: 'POST',
         url: '/api/orders',
         payload: {
           branchId: branchX.id,
-          tableNumber: '99', // Invalid table
+          fulfillmentType: FulfillmentType.DINE_IN,
+          tableToken: randomUUID(),
           idempotencyKey: randomUUID(),
-          items: [{ menuItemId: itemAvailableX.id, quantity: 1 }]
-        }
+          items: [orderLine(itemAvailableX.id)],
+        },
       });
 
-      console.log('PAYLOAD IS:', response.payload);
       expect(response.statusCode).toBe(422);
       const data = JSON.parse(response.payload);
-      expect(data.error.message).toBe('Invalid table number');
+      expect(data.error.message).toMatch(/table token/i);
     });
 
     it('should reject order if item list contains unavailable items', async () => {
       const response = await fastify.inject({
         method: 'POST',
         url: '/api/orders',
-        payload: {
-          branchId: branchX.id,
-          tableNumber: '1',
-          idempotencyKey: randomUUID(),
-          items: [{ menuItemId: itemUnavailableX.id, quantity: 1 }]
-        }
+        payload: perTableOrderPayload(branchX.id, tableTokenX, [orderLine(itemUnavailableX.id)]),
       });
 
       expect(response.statusCode).toBe(422);
@@ -233,11 +280,12 @@ describe('🚀 Integration & Security Hardening Tests', () => {
         method: 'POST',
         url: '/api/orders',
         payload: {
-          branchId: branchY.id, // Branch Y order
+          branchId: branchY.id,
+          fulfillmentType: FulfillmentType.DINE_IN,
           tableNumber: '2',
           idempotencyKey: randomUUID(),
-          items: [{ menuItemId: itemAvailableX.id, quantity: 1 }] // Item belongs to Branch X menu
-        }
+          items: [orderLine(itemAvailableX.id)],
+        },
       });
 
       expect(response.statusCode).toBe(422);
@@ -250,12 +298,7 @@ describe('🚀 Integration & Security Hardening Tests', () => {
   describe('🔄 Idempotency Safety Checks', () => {
     it('should return identical responses (200 OK) for repeated submissions of same key', async () => {
       const uniqueKey = randomUUID();
-      const payload = {
-        branchId: branchX.id,
-        tableNumber: '1',
-        idempotencyKey: uniqueKey,
-        items: [{ menuItemId: itemAvailableX.id, quantity: 1 }]
-      };
+      const payload = perTableOrderPayload(branchX.id, tableTokenX, [orderLine(itemAvailableX.id)], uniqueKey);
 
       const res1 = await fastify.inject({ method: 'POST', url: '/api/orders', payload });
       expect(res1.statusCode).toBe(201);
@@ -298,12 +341,7 @@ describe('🚀 Integration & Security Hardening Tests', () => {
       const itemBefore = await prisma.menuItem.findUnique({ where: { id: itemAvailableX.id } });
       const initialPopularity = itemBefore?.popularityScore || 0;
 
-      const payload = {
-        branchId: branchX.id,
-        tableNumber: '1',
-        idempotencyKey: randomUUID(),
-        items: [{ menuItemId: itemAvailableX.id, quantity: 3 }]
-      };
+      const payload = perTableOrderPayload(branchX.id, tableTokenX, [orderLine(itemAvailableX.id, 3)]);
       const orderRes = await fastify.inject({ method: 'POST', url: '/api/orders', payload });
       expect(orderRes.statusCode).toBe(201);
       const createdOrder = JSON.parse(orderRes.payload);
@@ -323,9 +361,11 @@ describe('🚀 Integration & Security Hardening Tests', () => {
       expect(orderItem).toBeDefined();
       expect(orderItem.status).toBe('PENDING');
 
-      const aggItem = queueData.aggregated.find((a: any) => a.menuItemId === itemAvailableX.id && a.status === 'PENDING');
+      const aggItem = queueData.items.find(
+        (i: any) => i.menuItemId === itemAvailableX.id && i.status === 'PENDING'
+      );
       expect(aggItem).toBeDefined();
-      expect(aggItem.count).toBeGreaterThanOrEqual(3);
+      expect(aggItem.quantity).toBeGreaterThanOrEqual(3);
 
       const updateRes = await fastify.inject({
         method: 'PATCH',
@@ -347,10 +387,11 @@ describe('🚀 Integration & Security Hardening Tests', () => {
         url: '/api/orders',
         payload: {
           branchId: branchX.id,
-          tableNumber: '1',
+          fulfillmentType: FulfillmentType.DINE_IN,
+          tableToken: tableTokenX,
           idempotencyKey: randomUUID(),
-          items: []
-        }
+          items: [],
+        },
       });
       expect(response.statusCode).toBe(400); // Zod validation
     });
@@ -359,12 +400,9 @@ describe('🚀 Integration & Security Hardening Tests', () => {
       const response = await fastify.inject({
         method: 'POST',
         url: '/api/orders',
-        payload: {
-          branchId: branchX.id,
-          tableNumber: '1',
-          idempotencyKey: randomUUID(),
-          items: [{ menuItemId: itemAvailableX.id, quantity: -2 }]
-        }
+        payload: perTableOrderPayload(branchX.id, tableTokenX, [
+          { ...orderLine(itemAvailableX.id), quantity: -2 },
+        ]),
       });
       expect(response.statusCode).toBe(400); // Zod validation
     });
@@ -374,12 +412,9 @@ describe('🚀 Integration & Security Hardening Tests', () => {
       const response = await fastify.inject({
         method: 'POST',
         url: '/api/orders',
-        payload: {
-          branchId: branchX.id,
-          tableNumber: '1',
-          idempotencyKey: randomUUID(),
-          items: [{ menuItemId: itemAvailableX.id, quantity: 1, notes: longNote }]
-        }
+        payload: perTableOrderPayload(branchX.id, tableTokenX, [
+          orderLine(itemAvailableX.id, 1, longNote),
+        ]),
       });
       expect(response.statusCode).toBe(400);
     });
@@ -395,12 +430,7 @@ describe('🚀 Integration & Security Hardening Tests', () => {
     });
 
     it('should block staff from updating kitchen items belonging to another branch', async () => {
-      const payload = {
-        branchId: branchX.id,
-        tableNumber: '1',
-        idempotencyKey: randomUUID(),
-        items: [{ menuItemId: itemAvailableX.id, quantity: 1 }]
-      };
+      const payload = perTableOrderPayload(branchX.id, tableTokenX, [orderLine(itemAvailableX.id)]);
       const res = await fastify.inject({ method: 'POST', url: '/api/orders', payload });
       const createdOrder = JSON.parse(res.payload);
       const itemId = createdOrder.items[0].id;
@@ -426,12 +456,7 @@ describe('🚀 Integration & Security Hardening Tests', () => {
 
     it('should process concurrent checkout calls with identical keys and resolve only one db insert', async () => {
       const key = randomUUID();
-      const payload = {
-        branchId: branchX.id,
-        tableNumber: '1',
-        idempotencyKey: key,
-        items: [{ menuItemId: itemAvailableX.id, quantity: 1 }]
-      };
+      const payload = perTableOrderPayload(branchX.id, tableTokenX, [orderLine(itemAvailableX.id)], key);
 
       const promises = [
         fastify.inject({ method: 'POST', url: '/api/orders', payload }),

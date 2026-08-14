@@ -82,10 +82,11 @@ export default function MenusAdmin() {
           const newMenu = await apiClient.createMenu(branchId, { name: 'Main Menu' });
           setMenu({ ...newMenu, sections: [] });
         }
-      } else if (data) {
+      } else if (data && typeof data === 'object' && !Array.isArray(data)) {
+        const single = data as MenuResponse;
         setMenu({
-          ...data,
-          sections: (data as any).sections || []
+          ...single,
+          sections: single.sections || [],
         });
       }
       
@@ -304,7 +305,7 @@ export default function MenusAdmin() {
 
   const handleToggleAvailability = async (itemId: string, isAvailable: boolean) => {
     try {
-      await apiClient.toggleAvailability(itemId, !isAvailable);
+      await apiClient.toggleAvailability(itemId, { isAvailable: !isAvailable });
       fetchMenuData();
     } catch (e) {
       showToast('Failed to toggle', 'error');

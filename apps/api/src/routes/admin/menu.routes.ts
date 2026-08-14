@@ -1,15 +1,38 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { applyTemplateSchema } from '@qrmenu/shared';
 import { requireAdmin } from '../../middleware/auth.middleware.js';
-import { NotFoundError } from '../../utils/errors.js';
+import { NotFoundError, ValidationError } from '../../utils/errors.js';
+import {
+  runPublishPreflight,
+  normalizeSectionSortOrders,
+} from '../../services/menu.service.js';
+import { formatModifierGroups } from '../../services/menu-formatter.service.js';
+import { numberFromDecimal } from '@qrmenu/shared';
+
+function formatAdminMenu(menu: any) {
+  return {
+    ...menu,
+    sections: menu.sections.map((s: any) => ({
+      ...s,
+      items: s.items.map((i: any) => ({
+        ...i,
+        price: numberFromDecimal(i.price),
+        comboPrice: i.comboPrice ? numberFromDecimal(i.comboPrice) : null,
+        modifierGroups: i.modifierGroups
+          ? formatModifierGroups(i.modifierGroups)
+          : [],
+      })),
+    })),
+  };
+}
 
 export async function adminMenuRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireAdmin);
 
   fastify.get('/branches/:branchId/menu', async (request: any, reply) => {
     const { branchId } = request.params;
-    
-    // Check branch
+
     const branch = await fastify.prisma.branch.findFirst({
       where: { id: branchId, companyId: request.staff.companyId },
     });
@@ -21,29 +44,28 @@ export async function adminMenuRoutes(fastify: FastifyInstance) {
         sections: {
           orderBy: { sortOrder: 'asc' },
           include: {
-            items: { orderBy: { sortOrder: 'asc' } },
+            items: {
+              orderBy: { sortOrder: 'asc' },
+              include: {
+                modifierGroups: {
+                  orderBy: { sortOrder: 'asc' },
+                  include: {
+                    options: { orderBy: { sortOrder: 'asc' } },
+                  },
+                },
+              },
+            },
           },
         },
       },
     });
-    
-    const formattedMenus = menus.map(m => ({
-      ...m,
-      sections: m.sections.map(s => ({
-        ...s,
-        items: s.items.map(i => ({
-          ...i,
-          price: Number(i.price)
-        }))
-      }))
-    }));
 
-    return reply.status(200).send(formattedMenus);
+    return reply.status(200).send(menus.map(formatAdminMenu));
   });
 
   fastify.post('/branches/:branchId/menu', async (request: any, reply) => {
     const { branchId } = request.params;
-    
+
     const branch = await fastify.prisma.branch.findFirst({
       where: { id: branchId, companyId: request.staff.companyId },
     });
@@ -64,7 +86,7 @@ export async function adminMenuRoutes(fastify: FastifyInstance) {
 
   fastify.patch('/menus/:id', async (request: any, reply) => {
     const { id } = request.params;
-    
+
     const menu = await fastify.prisma.menu.findFirst({
       where: { id, branch: { companyId: request.staff.companyId } },
     });
@@ -80,33 +102,49 @@ export async function adminMenuRoutes(fastify: FastifyInstance) {
     return reply.status(200).send(updated);
   });
 
-  fastify.post('/menus/:id/publish', async (request: any, reply) => {
+  fastify.get('/menus/:id/preflight', async (request: any, reply) => {
     const { id } = request.params;
-    
     const menu = await fastify.prisma.menu.findFirst({
       where: { id, branch: { companyId: request.staff.companyId } },
     });
     if (!menu) throw new NotFoundError('Menu not found');
 
+    const result = await runPublishPreflight(fastify.prisma, id);
+    return reply.status(200).send(result);
+  });
+
+  fastify.post('/menus/:id/publish', async (request: any, reply) => {
+    const { id } = request.params;
+
+    const menu = await fastify.prisma.menu.findFirst({
+      where: { id, branch: { companyId: request.staff.companyId } },
+    });
+    if (!menu) throw new NotFoundError('Menu not found');
+
+    const preflight = await runPublishPreflight(fastify.prisma, id);
+    if (!preflight.canPublish) {
+      throw new ValidationError(
+        `Cannot publish: ${preflight.errors.join('; ')}`
+      );
+    }
+
     await fastify.prisma.$transaction(async (tx) => {
-      // Unpublish existing
       await tx.menu.updateMany({
         where: { branchId: menu.branchId, status: 'PUBLISHED' },
-        data: { status: 'DRAFT' },
+        data: { status: 'ARCHIVED', archivedAt: new Date() },
       });
-      // Publish new
       await tx.menu.update({
         where: { id },
-        data: { status: 'PUBLISHED' },
+        data: { status: 'PUBLISHED', publishedAt: new Date(), archivedAt: null },
       });
     });
 
-    return reply.status(200).send({ success: true });
+    return reply.status(200).send({ success: true, warnings: preflight.warnings });
   });
 
   fastify.post('/menus/:id/unpublish', async (request: any, reply) => {
     const { id } = request.params;
-    
+
     const menu = await fastify.prisma.menu.findFirst({
       where: { id, branch: { companyId: request.staff.companyId } },
     });
@@ -119,46 +157,124 @@ export async function adminMenuRoutes(fastify: FastifyInstance) {
     return reply.status(200).send(updated);
   });
 
-  // ─── GET /menu-templates ──────────────────────────────
-  fastify.get('/menu-templates', async (request, reply) => {
-    const templates = await fastify.prisma.menuPresetTemplate.findMany({
-      orderBy: { createdAt: 'desc' }
+  fastify.post('/menus/:id/restore', async (request: any, reply) => {
+    const { id } = request.params;
+
+    const menu = await fastify.prisma.menu.findFirst({
+      where: { id, branch: { companyId: request.staff.companyId }, status: 'ARCHIVED' },
     });
-    return reply.status(200).send(templates);
+    if (!menu) throw new NotFoundError('Archived menu not found');
+
+    const preflight = await runPublishPreflight(fastify.prisma, id);
+    if (!preflight.canPublish) {
+      throw new ValidationError(`Cannot restore: ${preflight.errors.join('; ')}`);
+    }
+
+    await fastify.prisma.$transaction(async (tx) => {
+      await tx.menu.updateMany({
+        where: { branchId: menu.branchId, status: 'PUBLISHED' },
+        data: { status: 'ARCHIVED', archivedAt: new Date() },
+      });
+      await tx.menu.update({
+        where: { id },
+        data: { status: 'PUBLISHED', publishedAt: new Date() },
+      });
+    });
+
+    return reply.status(200).send({ success: true });
   });
 
-  // ─── POST /menus/:id/apply-template ───────────────────
-  fastify.post('/menus/:id/apply-template', async (request: any, reply) => {
+  fastify.post('/menus/:id/reorder-sections', async (request: any, reply) => {
     const { id } = request.params;
-    const { templateId, sections } = request.body || {};
+    const schema = z.object({ orderedIds: z.array(z.string().uuid()) });
+    const { orderedIds } = schema.parse(request.body);
 
     const menu = await fastify.prisma.menu.findFirst({
       where: { id, branch: { companyId: request.staff.companyId } },
     });
     if (!menu) throw new NotFoundError('Menu not found');
 
-    let templateSections = sections;
-    if (!templateSections && templateId) {
+    await normalizeSectionSortOrders(fastify.prisma, id, orderedIds);
+    return reply.status(200).send({ success: true });
+  });
+
+  fastify.get('/menu-templates', async (_request, reply) => {
+    const templates = await fastify.prisma.menuPresetTemplate.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+    return reply.status(200).send(templates);
+  });
+
+  fastify.get('/menus/:id/template-impact', async (request: any, reply) => {
+    const { id } = request.params;
+    const menu = await fastify.prisma.menu.findFirst({
+      where: { id, branch: { companyId: request.staff.companyId } },
+      include: {
+        sections: { include: { items: { include: { modifierGroups: true } } } },
+      },
+    });
+    if (!menu) throw new NotFoundError('Menu not found');
+
+    const sectionsToReplace = menu.sections.length;
+    const itemsToReplace = menu.sections.reduce((n, s) => n + s.items.length, 0);
+    const modifierGroupsAffected = menu.sections.reduce(
+      (n, s) => n + s.items.reduce((m, i) => m + i.modifierGroups.length, 0),
+      0
+    );
+
+    return reply.status(200).send({
+      sectionsToReplace,
+      itemsToReplace,
+      modifierGroupsAffected,
+      backupAvailable: !!menu.branchId,
+    });
+  });
+
+  fastify.post('/menus/:id/apply-template', async (request: any, reply) => {
+    const { id } = request.params;
+    const body = applyTemplateSchema.parse(request.body || {});
+
+    const menu = await fastify.prisma.menu.findFirst({
+      where: { id, branch: { companyId: request.staff.companyId } },
+      include: {
+        sections: { include: { items: { include: { modifierGroups: true } } } },
+      },
+    });
+    if (!menu) throw new NotFoundError('Menu not found');
+
+    if (!body.confirmReplace) {
+      throw new ValidationError(
+        'Template application requires confirmReplace=true after reviewing impact'
+      );
+    }
+
+    let templateSections = body.sections;
+    if (!templateSections && body.templateId) {
       const template = await fastify.prisma.menuPresetTemplate.findUnique({
-        where: { id: templateId }
+        where: { id: body.templateId },
       });
-      if (template) {
-        templateSections = JSON.parse(template.sectionsJson);
-      }
+      if (template) templateSections = JSON.parse(template.sectionsJson);
     }
 
     if (!templateSections || !Array.isArray(templateSections)) {
-      throw new Error('Invalid template data');
+      throw new ValidationError('Invalid template data');
     }
 
-    // Apply template in transaction
+    const backupJson = JSON.stringify({
+      sections: menu.sections,
+      savedAt: new Date().toISOString(),
+    });
+
+    await fastify.prisma.branch.update({
+      where: { id: menu.branchId },
+      data: { setupDraftBackupJson: backupJson },
+    });
+
     await fastify.prisma.$transaction(async (tx) => {
-      // 1. Clear existing sections
       await tx.menuSection.deleteMany({ where: { menuId: menu.id } });
 
-      // 2. Create sections and items
-      for (let sIndex = 0; sIndex < templateSections.length; sIndex++) {
-        const sec = templateSections[sIndex];
+      for (let sIndex = 0; sIndex < templateSections!.length; sIndex++) {
+        const sec = templateSections![sIndex];
         const createdSec = await tx.menuSection.create({
           data: {
             menuId: menu.id,
@@ -166,7 +282,8 @@ export async function adminMenuRoutes(fastify: FastifyInstance) {
             nameAmharic: sec.nameAmharic || null,
             timeSlot: sec.timeSlot || 'ALL_DAY',
             sortOrder: sIndex,
-          }
+            isVisible: sec.isVisible ?? true,
+          },
         });
 
         if (sec.items && Array.isArray(sec.items)) {
@@ -178,16 +295,19 @@ export async function adminMenuRoutes(fastify: FastifyInstance) {
                 name: item.name,
                 nameAmharic: item.nameAmharic || null,
                 description: item.description || null,
+                descriptionAmharic: item.descriptionAmharic || null,
                 price: item.price || 0,
                 spiceLevel: item.spiceLevel || 0,
                 dietaryLabels: item.dietaryLabels || [],
+                allergens: item.allergens || [],
                 servingSize: item.servingSize || null,
                 isCombo: item.isCombo || false,
                 comboItemCount: item.comboItemCount || null,
                 comboPrice: item.comboPrice || null,
+                prepTimeMin: item.prepTimeMin || null,
                 isAvailable: true,
                 sortOrder: iIndex,
-              }
+              },
             });
           }
         }
@@ -199,15 +319,82 @@ export async function adminMenuRoutes(fastify: FastifyInstance) {
       include: {
         sections: {
           orderBy: { sortOrder: 'asc' },
-          include: { items: { orderBy: { sortOrder: 'asc' } } }
+          include: {
+            items: {
+              orderBy: { sortOrder: 'asc' },
+              include: {
+                modifierGroups: {
+                  include: { options: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return reply.status(200).send(formatAdminMenu(updatedMenu!));
+  });
+
+  fastify.post('/menus/:id/restore-backup', async (request: any, reply) => {
+    const { id } = request.params;
+
+    const menu = await fastify.prisma.menu.findFirst({
+      where: { id, branch: { companyId: request.staff.companyId } },
+      include: { branch: true },
+    });
+    if (!menu) throw new NotFoundError('Menu not found');
+
+    const backup = menu.branch.setupDraftBackupJson;
+    if (!backup) throw new ValidationError('No draft backup available');
+
+    const parsed = JSON.parse(backup);
+    if (!parsed.sections) throw new ValidationError('Invalid backup data');
+
+    await fastify.prisma.$transaction(async (tx) => {
+      await tx.menuSection.deleteMany({ where: { menuId: menu.id } });
+
+      for (let sIndex = 0; sIndex < parsed.sections.length; sIndex++) {
+        const sec = parsed.sections[sIndex];
+        const createdSec = await tx.menuSection.create({
+          data: {
+            menuId: menu.id,
+            name: sec.name,
+            nameAmharic: sec.nameAmharic || null,
+            timeSlot: sec.timeSlot || 'ALL_DAY',
+            sortOrder: sIndex,
+            isVisible: sec.isVisible ?? true,
+          },
+        });
+
+        for (let iIndex = 0; iIndex < (sec.items || []).length; iIndex++) {
+          const item = sec.items[iIndex];
+          await tx.menuItem.create({
+            data: {
+              sectionId: createdSec.id,
+              name: item.name,
+              nameAmharic: item.nameAmharic || null,
+              description: item.description || null,
+              descriptionAmharic: item.descriptionAmharic || null,
+              price: item.price || 0,
+              spiceLevel: item.spiceLevel || 0,
+              dietaryLabels: item.dietaryLabels || [],
+              allergens: item.allergens || [],
+              servingSize: item.servingSize || null,
+              isCombo: item.isCombo || false,
+              comboItemCount: item.comboItemCount || null,
+              comboPrice: item.comboPrice || null,
+              isAvailable: item.isAvailable ?? true,
+              sortOrder: iIndex,
+            },
+          });
         }
       }
     });
 
-    return reply.status(200).send(updatedMenu);
+    return reply.status(200).send({ success: true });
   });
 
-  // ─── PATCH /branches/:branchId/theme ──────────────────
   fastify.patch('/branches/:branchId/theme', async (request: any, reply) => {
     const { branchId } = request.params;
     const { themeId } = request.body || {};
@@ -219,7 +406,7 @@ export async function adminMenuRoutes(fastify: FastifyInstance) {
 
     const updated = await fastify.prisma.branch.update({
       where: { id: branchId },
-      data: { themeId: themeId || 'mesob-classic' }
+      data: { themeId: themeId || 'mesob-classic' },
     });
 
     return reply.status(200).send(updated);

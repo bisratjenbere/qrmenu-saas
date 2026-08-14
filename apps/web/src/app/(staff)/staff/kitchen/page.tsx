@@ -10,28 +10,25 @@ interface KitchenItem {
   orderId: string;
   menuItemId: string;
   itemNameSnapshot: string;
+  itemNameAmSnapshot?: string | null;
+  modifiersSnapshot?: Array<{ groupName: string; optionName: string }>;
   priceSnapshot: number;
+  lineTotal: number;
   quantity: number;
   notes: string | null;
   status: 'PENDING' | 'PREPARING' | 'READY';
   order: {
     tableNumber: string;
+    fulfillmentType: string;
     createdAt: string;
+    grandTotal?: number;
   };
-}
-
-interface AggregatedItem {
-  menuItemId: string;
-  name: string;
-  status: 'PENDING' | 'PREPARING' | 'READY';
-  count: number;
 }
 
 export default function KitchenPage() {
   const router = useRouter();
   const { staff, isLoading } = useAuth();
   const [items, setItems] = useState<KitchenItem[]>([]);
-  const [aggregated, setAggregated] = useState<AggregatedItem[]>([]);
   const [error, setError] = useState('');
 
   // Audio alert helper
@@ -44,8 +41,7 @@ export default function KitchenPage() {
     if (!staff?.branchId) return;
     try {
       const data = await apiClient.fetchKitchenQueue(staff.branchId);
-      setItems(data.items);
-      setAggregated(data.aggregated);
+      setItems(data.items as KitchenItem[]);
     } catch (e: any) {
       setError(e.message || 'Failed to load kitchen queue');
     }
@@ -68,33 +64,11 @@ export default function KitchenPage() {
       loadQueue();
     },
     onOrderItemUpdated: (updatedItem) => {
-      // Optimistically update local item prep status
-      setItems(prev => prev.map(i => i.id === updatedItem.id ? { ...i, status: updatedItem.status as any } : i));
-      
-      // Update local aggregation
-      setAggregated(prev => {
-        const itemToUpdate = items.find(i => i.id === updatedItem.id);
-        if (!itemToUpdate) return prev;
-        
-        // Recalculate aggregation counts dynamically
-        const newItems = items.map(i => i.id === updatedItem.id ? { ...i, status: updatedItem.status as any } : i);
-        const map = new Map<string, { menuItemId: string, name: string, status: string, count: number }>();
-        for (const item of newItems) {
-          const key = `${item.menuItemId}-${item.status}`;
-          const existing = map.get(key);
-          if (existing) {
-            existing.count += item.quantity;
-          } else {
-            map.set(key, {
-              menuItemId: item.menuItemId,
-              name: item.itemNameSnapshot,
-              status: item.status,
-              count: item.quantity
-            });
-          }
-        }
-        return Array.from(map.values()) as any;
-      });
+      setItems(prev =>
+        prev.map(i =>
+          i.id === updatedItem.id ? { ...i, status: updatedItem.status as KitchenItem['status'] } : i
+        )
+      );
     },
     onReconnect: () => {
       loadQueue();
@@ -125,7 +99,16 @@ export default function KitchenPage() {
     return <div style={{ color: 'white', background: '#121214', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Error: Staff member is not assigned to a branch.</div>;
   }
 
-  // Filter out READY items from display to keep tickets clean, but keep them for calculations
+  const prepTotals = items
+    .filter(i => i.status !== 'READY')
+    .reduce((map, item) => {
+      const key = `${item.menuItemId}-${item.status}`;
+      const existing = map.get(key);
+      if (existing) existing.count += item.quantity;
+      else map.set(key, { name: item.itemNameSnapshot, status: item.status, count: item.quantity });
+      return map;
+    }, new Map<string, { name: string; status: string; count: number }>());
+
   const activeItems = items.filter(i => i.status !== 'READY');
 
   // Group active items by orderId for order ticket rendering
@@ -176,11 +159,11 @@ export default function KitchenPage() {
         {error && <p style={{ color: 'var(--color-error)', fontSize: '0.85rem' }}>{error}</p>}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', overflowY: 'auto', flex: 1 }}>
-          {aggregated.filter(a => a.status !== 'READY').length === 0 ? (
+          {Array.from(prepTotals.values()).length === 0 ? (
             <p style={{ color: '#a8a29e', fontSize: '0.9rem', fontStyle: 'italic' }}>No active items to prepare.</p>
           ) : (
-            aggregated.filter(a => a.status !== 'READY').map(a => (
-              <div key={`${a.menuItemId}-${a.status}`} style={{
+            Array.from(prepTotals.values()).map(a => (
+              <div key={`${a.name}-${a.status}`} style={{
                 background: '#292524',
                 padding: '0.85rem 1rem',
                 borderRadius: '0.75rem',
@@ -301,7 +284,7 @@ export default function KitchenPage() {
                     borderTopRightRadius: '1.15rem'
                   }}>
                     <span style={{ fontSize: '2.5rem', fontWeight: '900', color: '#fbbf24', textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
-                      T-{ticket.tableNumber}
+                      {ticket.tableNumber === 'takeaway' ? 'Takeaway' : `T-${ticket.tableNumber}`}
                     </span>
                     <span style={{
                       fontSize: '0.8rem',
@@ -333,6 +316,11 @@ export default function KitchenPage() {
                             {item.quantity}x {item.itemNameSnapshot}
                           </span>
                         </div>
+                        {item.modifiersSnapshot && item.modifiersSnapshot.length > 0 && (
+                          <div style={{ marginTop: '0.35rem', fontSize: '0.8rem', color: '#a8a29e' }}>
+                            {item.modifiersSnapshot.map(m => `${m.groupName}: ${m.optionName}`).join(' · ')}
+                          </div>
+                        )}
                         {item.notes && (
                           <div style={{
                             marginTop: '0.35rem',

@@ -1,5 +1,10 @@
 import { FastifyInstance } from 'fastify';
-import { createBranchSchema, updateBranchSchema } from '@qrmenu/shared';
+import {
+  createBranchSchema,
+  updateBranchSchema,
+  qrModeToServiceMode,
+  serviceModeToQrMode,
+} from '@qrmenu/shared';
 import { requireAdmin } from '../../middleware/auth.middleware.js';
 import { NotFoundError } from '../../utils/errors.js';
 
@@ -41,10 +46,13 @@ export async function adminBranchRoutes(fastify: FastifyInstance) {
       await assertTenantBranchQuota(fastify.prisma, companyId);
     }
 
+    const serviceMode = data.serviceMode ?? qrModeToServiceMode(data.qrMode);
     const branch = await fastify.prisma.branch.create({
       data: {
         ...data,
         companyId,
+        serviceMode,
+        qrMode: serviceModeToQrMode(serviceMode),
       },
     });
     return reply.status(201).send(branch);
@@ -64,9 +72,16 @@ export async function adminBranchRoutes(fastify: FastifyInstance) {
     });
     if (!existing) throw new NotFoundError('Branch not found');
 
+    const patch: Record<string, unknown> = { ...data };
+    if (data.serviceMode) {
+      patch.qrMode = serviceModeToQrMode(data.serviceMode);
+    } else if (data.qrMode) {
+      patch.serviceMode = qrModeToServiceMode(data.qrMode);
+    }
+
     const branch = await fastify.prisma.branch.update({
       where: { id },
-      data,
+      data: patch,
     });
     return reply.status(200).send(branch);
   });

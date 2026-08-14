@@ -14,9 +14,27 @@ enum QrMode {
   PER_TABLE
 }
 
+enum ServiceMode {
+  MENU_ONLY
+  SINGLE_QR_SELF_ORDER
+  PER_TABLE_QR
+}
+
+enum TableInputMode {
+  FREE_TEXT
+  VALIDATED
+}
+
+enum FulfillmentType {
+  DINE_IN
+  TAKEAWAY
+  ROOM_SERVICE
+}
+
 enum MenuStatus {
   DRAFT
   PUBLISHED
+  ARCHIVED
 }
 
 enum OrderStatus {
@@ -68,6 +86,11 @@ enum PaymentMethod {
   CASH
 }
 
+enum PrimaryLanguage {
+  AM
+  EN
+}
+
 // ─── Company ────────────────────────────────────────
 
 model Company {
@@ -89,18 +112,29 @@ model Company {
 // ─── Branch ─────────────────────────────────────────
 
 model Branch {
-  id                   String   @id @default(uuid())
-  companyId            String   @map("company_id")
+  id                   String          @id @default(uuid())
+  companyId            String          @map("company_id")
   name                 String
-  slug                 String   @unique
-  qrMode               QrMode   @default(SINGLE) @map("qr_mode")
-  coverImageUrl        String?  @map("cover_image_url")
+  slug                 String          @unique
+  qrMode               QrMode          @default(SINGLE) @map("qr_mode")
+  serviceMode          ServiceMode     @default(SINGLE_QR_SELF_ORDER) @map("service_mode")
+  coverImageUrl        String?         @map("cover_image_url")
+  logoUrl              String?         @map("logo_url")
   tagline              String?
-  currency             String   @default("ETB")
-  serviceChargePercent Float    @default(0) @map("service_charge_percent")
-  vatPercent           Float    @default(0) @map("vat_percent")
-  themeId              String   @default("mesob-classic") @map("theme_id")
-  createdAt            DateTime @default(now()) @map("created_at")
+  currency             String          @default("ETB")
+  serviceChargePercent Float           @default(0) @map("service_charge_percent")
+  vatPercent           Float           @default(0) @map("vat_percent")
+  themeId              String          @default("mesob-classic") @map("theme_id")
+  primaryLanguage      PrimaryLanguage @default(AM) @map("primary_language")
+  tableInputMode       TableInputMode  @default(VALIDATED) @map("table_input_mode")
+  enableTakeaway       Boolean         @default(true) @map("enable_takeaway")
+  enableRoomService    Boolean         @default(false) @map("enable_room_service")
+  callWaiterEnabled    Boolean         @default(false) @map("call_waiter_enabled")
+  requestBillEnabled   Boolean         @default(false) @map("request_bill_enabled")
+  whatsappNumber       String?         @map("whatsapp_number")
+  setupStep            Int             @default(0) @map("setup_step")
+  setupDraftBackupJson String?         @map("setup_draft_backup_json") @db.Text
+  createdAt            DateTime        @default(now()) @map("created_at")
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   menus   Menu[]
@@ -132,9 +166,11 @@ model Staff {
 // ─── Table ──────────────────────────────────────────
 
 model Table {
-  id       String @id @default(uuid())
-  branchId String @map("branch_id")
-  label    String
+  id               String    @id @default(uuid())
+  branchId         String    @map("branch_id")
+  label            String
+  qrToken          String    @unique @default(uuid()) @map("qr_token")
+  qrTokenRevokedAt DateTime? @map("qr_token_revoked_at")
 
   branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
@@ -145,16 +181,20 @@ model Table {
 // ─── Menu ───────────────────────────────────────────
 
 model Menu {
-  id        String     @id @default(uuid())
-  branchId  String     @map("branch_id")
-  name      String     @default("Main Menu")
-  status    MenuStatus @default(DRAFT)
-  createdAt DateTime   @default(now()) @map("created_at")
-  updatedAt DateTime   @updatedAt @map("updated_at")
+  id          String     @id @default(uuid())
+  branchId    String     @map("branch_id")
+  name        String     @default("Main Menu")
+  status      MenuStatus @default(DRAFT)
+  version     Int        @default(1)
+  publishedAt DateTime?  @map("published_at")
+  archivedAt  DateTime?  @map("archived_at")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
 
   branch   Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
   sections MenuSection[]
 
+  @@index([branchId, status])
   @@map("menus")
 }
 
@@ -167,6 +207,7 @@ model MenuSection {
   nameAmharic String? @map("name_amharic")
   sortOrder   Int     @default(0) @map("sort_order")
   timeSlot    String  @default("ALL_DAY") @map("time_slot")
+  isVisible   Boolean @default(true) @map("is_visible")
 
   menu  Menu       @relation(fields: [menuId], references: [id], onDelete: Cascade)
   items MenuItem[]
@@ -177,65 +218,120 @@ model MenuSection {
 // ─── MenuItem ───────────────────────────────────────
 
 model MenuItem {
-  id              String   @id @default(uuid())
-  sectionId       String   @map("section_id")
-  name            String
-  nameAmharic     String?  @map("name_amharic")
-  description     String?
-  price           Decimal  @db.Decimal(10, 2)
-  photoUrl        String?  @map("photo_url")
-  isAvailable     Boolean          @default(true) @map("is_available")
-  sortOrder       Int              @default(0) @map("sort_order")
-  popularityScore Int              @default(0) @map("popularity_score")
-  dietaryLabels   String[]         @default([])
-  allergens       String[]         @default([])
-  spiceLevel      Int              @default(0) @map("spice_level")
-  prepTimeMin     Int?             @map("prep_time_min")
-  calories        Int?
-  servingSize     String?          @map("serving_size")
-  isCombo         Boolean          @default(false) @map("is_combo")
-  comboItemCount  Int?             @map("combo_item_count")
-  comboPrice      Decimal?         @map("combo_price") @db.Decimal(10, 2)
+  id                 String    @id @default(uuid())
+  sectionId          String    @map("section_id")
+  name               String
+  nameAmharic        String?   @map("name_amharic")
+  description        String?
+  descriptionAmharic String?   @map("description_amharic")
+  kitchenDescription String?   @map("kitchen_description")
+  price              Decimal   @db.Decimal(10, 2)
+  photoUrl           String?   @map("photo_url")
+  isAvailable        Boolean   @default(true) @map("is_available")
+  unavailableReason  String?   @map("unavailable_reason")
+  unavailableUntil   DateTime? @map("unavailable_until")
+  sortOrder          Int       @default(0) @map("sort_order")
+  popularityScore    Int       @default(0) @map("popularity_score")
+  dietaryLabels      String[]  @default([])
+  allergens          String[]  @default([])
+  spiceLevel         Int       @default(0) @map("spice_level")
+  prepTimeMin        Int?      @map("prep_time_min")
+  calories           Int?
+  servingSize        String?   @map("serving_size")
+  isCombo            Boolean   @default(false) @map("is_combo")
+  comboItemCount     Int?      @map("combo_item_count")
+  comboPrice         Decimal?  @map("combo_price") @db.Decimal(10, 2)
+
+  section         MenuSection      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  modifierGroups  ModifierGroup[]
   orderItems      OrderItem[]
   upsellSources   MenuItemUpsell[] @relation("sourceItem")
   upsellTargets   MenuItemUpsell[] @relation("targetItem")
 
-  section MenuSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-
   @@map("menu_items")
+}
+
+// ─── ModifierGroup ──────────────────────────────────
+
+model ModifierGroup {
+  id          String  @id @default(uuid())
+  menuItemId  String  @map("menu_item_id")
+  name        String
+  nameAmharic String? @map("name_amharic")
+  required    Boolean @default(false)
+  minSelect   Int     @default(0) @map("min_select")
+  maxSelect   Int     @default(1) @map("max_select")
+  sortOrder   Int     @default(0) @map("sort_order")
+
+  menuItem MenuItem         @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  options  ModifierOption[]
+
+  @@map("modifier_groups")
+}
+
+// ─── ModifierOption ─────────────────────────────────
+
+model ModifierOption {
+  id          String  @id @default(uuid())
+  groupId     String  @map("group_id")
+  name        String
+  nameAmharic String? @map("name_amharic")
+  priceDelta  Decimal @default(0) @map("price_delta") @db.Decimal(10, 2)
+  isAvailable Boolean @default(true) @map("is_available")
+  sortOrder   Int     @default(0) @map("sort_order")
+
+  group ModifierGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@map("modifier_options")
 }
 
 // ─── Order ──────────────────────────────────────────
 
 model Order {
-  id             String      @id @default(uuid())
-  branchId       String      @map("branch_id")
-  tableNumber    String      @map("table_number")
-  status         OrderStatus @default(NEW)
-  idempotencyKey String      @unique @map("idempotency_key")
-  createdAt      DateTime    @default(now()) @map("created_at")
+  id                  String          @id @default(uuid())
+  branchId            String          @map("branch_id")
+  tableNumber         String          @map("table_number")
+  fulfillmentType     FulfillmentType @default(DINE_IN) @map("fulfillment_type")
+  tableId             String?         @map("table_id")
+  status              OrderStatus     @default(NEW)
+  idempotencyKey      String          @unique @map("idempotency_key")
+  currency            String          @default("ETB")
+  subtotal            Decimal         @default(0) @db.Decimal(12, 2)
+  serviceChargeRate   Decimal         @default(0) @map("service_charge_rate") @db.Decimal(5, 2)
+  serviceChargeAmount Decimal         @default(0) @map("service_charge_amount") @db.Decimal(12, 2)
+  vatRate             Decimal         @default(0) @map("vat_rate") @db.Decimal(5, 2)
+  vatAmount           Decimal         @default(0) @map("vat_amount") @db.Decimal(12, 2)
+  grandTotal          Decimal         @default(0) @map("grand_total") @db.Decimal(12, 2)
+  createdAt           DateTime        @default(now()) @map("created_at")
 
   branch Branch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
   items  OrderItem[]
 
+  @@index([branchId, status, createdAt])
   @@map("orders")
 }
 
 // ─── OrderItem ──────────────────────────────────────
 
 model OrderItem {
-  id               String  @id @default(uuid())
-  orderId          String  @map("order_id")
-  menuItemId       String  @map("menu_item_id")
-  itemNameSnapshot String          @map("item_name_snapshot")
-  priceSnapshot    Decimal         @map("price_snapshot") @db.Decimal(10, 2)
-  quantity         Int
-  notes            String?
-  status           OrderItemStatus @default(PENDING)
+  id                  String          @id @default(uuid())
+  orderId             String          @map("order_id")
+  menuItemId          String          @map("menu_item_id")
+  clientLineId        String          @map("client_line_id")
+  itemNameSnapshot    String          @map("item_name_snapshot")
+  itemNameAmSnapshot  String?         @map("item_name_am_snapshot")
+  priceSnapshot       Decimal         @map("price_snapshot") @db.Decimal(10, 2)
+  modifiersSnapshot   Json            @default("[]") @map("modifiers_snapshot")
+  lineTotal           Decimal         @map("line_total") @db.Decimal(12, 2)
+  quantity            Int
+  notes               String?
+  status              OrderItemStatus @default(PENDING)
+  previousStatus      OrderItemStatus? @map("previous_status")
 
   order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   menuItem MenuItem @relation(fields: [menuItemId], references: [id])
 
+  @@unique([orderId, clientLineId])
   @@map("order_items")
 }
 

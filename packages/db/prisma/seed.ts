@@ -1,7 +1,10 @@
-import { PrismaClient, QrMode, MenuStatus, StaffRole } from '@prisma/client';
+import { PrismaClient, QrMode, MenuStatus, StaffRole, ServiceMode } from '@prisma/client';
 import { randomUUID } from 'crypto';
-
 import bcrypt from 'bcryptjs';
+import {
+  ETHIOPIAN_DEMO_BRANCH,
+  ETHIOPIAN_DEMO_SECTIONS,
+} from './ethiopian-seed-data';
 
 async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 12);
@@ -10,37 +13,53 @@ async function hashPassword(password: string): Promise<string> {
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🌱 Seeding database...\n');
+  console.log('🌱 Seeding database (Ethiopian demo)...\n');
 
-  // ─── Company ────────────────────────────────────
   const company = await prisma.company.upsert({
-    where: { slug: 'demo-restaurant' },
+    where: { slug: 'mesob-restaurant' },
     update: {},
     create: {
       id: randomUUID(),
-      name: 'Demo Restaurant',
-      slug: 'demo-restaurant',
+      name: 'Mesob Restaurant Group',
+      slug: 'mesob-restaurant',
     },
   });
   console.log(`✅ Company: ${company.name}`);
 
-  // ─── Branch ─────────────────────────────────────
   const branch = await prisma.branch.upsert({
-    where: { slug: 'downtown' },
-    update: {},
+    where: { slug: ETHIOPIAN_DEMO_BRANCH.slug },
+    update: {
+      name: ETHIOPIAN_DEMO_BRANCH.name,
+      tagline: ETHIOPIAN_DEMO_BRANCH.tagline,
+      currency: ETHIOPIAN_DEMO_BRANCH.currency,
+      serviceChargePercent: ETHIOPIAN_DEMO_BRANCH.serviceChargePercent,
+      vatPercent: ETHIOPIAN_DEMO_BRANCH.vatPercent,
+      serviceMode: ServiceMode.SINGLE_QR_SELF_ORDER,
+      qrMode: QrMode.SINGLE,
+      primaryLanguage: 'AM',
+      enableTakeaway: true,
+      setupStep: 7,
+    },
     create: {
       id: randomUUID(),
       companyId: company.id,
-      name: 'Downtown Branch',
-      slug: 'downtown',
-      qrMode: QrMode.PER_TABLE,
+      name: ETHIOPIAN_DEMO_BRANCH.name,
+      slug: ETHIOPIAN_DEMO_BRANCH.slug,
+      qrMode: QrMode.SINGLE,
+      serviceMode: ServiceMode.SINGLE_QR_SELF_ORDER,
+      tagline: ETHIOPIAN_DEMO_BRANCH.tagline,
+      currency: ETHIOPIAN_DEMO_BRANCH.currency,
+      serviceChargePercent: ETHIOPIAN_DEMO_BRANCH.serviceChargePercent,
+      vatPercent: ETHIOPIAN_DEMO_BRANCH.vatPercent,
+      primaryLanguage: 'AM',
+      enableTakeaway: true,
+      setupStep: 7,
     },
   });
-  console.log(`✅ Branch: ${branch.name} (slug: ${branch.slug})`);
+  console.log(`✅ Branch: ${branch.name} (${branch.slug})`);
 
-  // ─── Super Admin ─────────────────────────────────
   const superAdminHash = await hashPassword('changeme');
-  const superAdmin = await prisma.staff.upsert({
+  await prisma.staff.upsert({
     where: { email: 'superadmin@system.com' },
     update: {},
     create: {
@@ -53,48 +72,39 @@ async function main() {
       role: StaffRole.SUPER_ADMIN,
     },
   });
-  console.log(`✅ Super Admin: ${superAdmin.email}`);
 
-  // ─── Staff ──────────────────────────────────────
   const adminHash = await hashPassword('changeme');
-  const waiterHash = await hashPassword('changeme');
-
-  const admin = await prisma.staff.upsert({
-    where: { email: 'admin@demo.com' },
+  await prisma.staff.upsert({
+    where: { email: 'admin@mesob.com' },
     update: {},
     create: {
       id: randomUUID(),
       companyId: company.id,
-      branchId: null, // Company-wide admin
-      name: 'Admin User',
-      email: 'admin@demo.com',
+      name: 'Restaurant Admin',
+      email: 'admin@mesob.com',
       passwordHash: adminHash,
       role: StaffRole.ADMIN,
     },
   });
-  console.log(`✅ Admin: ${admin.email}`);
 
-  const waiter = await prisma.staff.upsert({
-    where: { email: 'waiter@demo.com' },
+  await prisma.staff.upsert({
+    where: { email: 'waiter@mesob.com' },
     update: {},
     create: {
       id: randomUUID(),
       companyId: company.id,
       branchId: branch.id,
       name: 'Waiter One',
-      email: 'waiter@demo.com',
-      passwordHash: waiterHash,
+      email: 'waiter@mesob.com',
+      passwordHash: adminHash,
       role: StaffRole.STAFF,
     },
   });
-  console.log(`✅ Waiter: ${waiter.email}`);
+  console.log('✅ Staff accounts created');
 
-  // ─── Tables ─────────────────────────────────────
-  for (let i = 1; i <= 5; i++) {
+  for (let i = 1; i <= 8; i++) {
     await prisma.table.upsert({
-      where: {
-        branchId_label: { branchId: branch.id, label: String(i) },
-      },
+      where: { branchId_label: { branchId: branch.id, label: String(i) } },
       update: {},
       create: {
         id: randomUUID(),
@@ -103,24 +113,12 @@ async function main() {
       },
     });
   }
-  console.log(`✅ Tables: 1–5`);
+  console.log('✅ Tables 1–8');
 
-  // ─── Menu ───────────────────────────────────────
-  // Delete existing orders and items for this branch to start fresh without foreign key violations
   await prisma.orderItem.deleteMany({
-    where: {
-      order: {
-        branchId: branch.id
-      }
-    }
+    where: { order: { branchId: branch.id } },
   });
-  await prisma.order.deleteMany({
-    where: {
-      branchId: branch.id
-    }
-  });
-  
-  // Delete existing menus for this branch to start fresh
+  await prisma.order.deleteMany({ where: { branchId: branch.id } });
   await prisma.menu.deleteMany({ where: { branchId: branch.id } });
 
   const menu = await prisma.menu.create({
@@ -129,152 +127,90 @@ async function main() {
       branchId: branch.id,
       name: 'Main Menu',
       status: MenuStatus.PUBLISHED,
-    },
-  });
-  console.log(`✅ Menu: ${menu.name} (${menu.status})`);
-
-  // ─── Sections & Items ──────────────────────────
-
-  // Appetizers
-  const appetizers = await prisma.menuSection.create({
-    data: {
-      id: randomUUID(),
-      menuId: menu.id,
-      name: 'Appetizers',
-      sortOrder: 0,
+      version: 1,
+      publishedAt: new Date(),
     },
   });
 
-  const appetizerItems = [
-    {
-      name: 'Crispy Spring Rolls',
-      description: 'Golden fried vegetable spring rolls served with sweet chili dipping sauce',
-      price: 8.99,
-    },
-    {
-      name: 'Bruschetta Trio',
-      description: 'Toasted ciabatta topped with tomato-basil, mushroom-truffle, and roasted pepper',
-      price: 11.50,
-    },
-    {
-      name: 'Soup of the Day',
-      description: 'Ask your server for today\'s freshly made soup, served with artisan bread',
-      price: 7.00,
-    },
-    {
-      name: 'Grilled Halloumi Salad',
-      description: 'Warm halloumi on mixed greens with pomegranate seeds, walnuts, and honey-lemon dressing',
-      price: 12.50,
-    },
-  ];
-
-  for (let i = 0; i < appetizerItems.length; i++) {
-    await prisma.menuItem.create({
+  for (let sIndex = 0; sIndex < ETHIOPIAN_DEMO_SECTIONS.length; sIndex++) {
+    const sec = ETHIOPIAN_DEMO_SECTIONS[sIndex];
+    const section = await prisma.menuSection.create({
       data: {
         id: randomUUID(),
-        sectionId: appetizers.id,
-        ...appetizerItems[i],
-        sortOrder: i,
+        menuId: menu.id,
+        name: sec.name,
+        nameAmharic: sec.nameAmharic,
+        timeSlot: sec.timeSlot,
+        sortOrder: sIndex,
+        isVisible: true,
       },
     });
+
+    for (let iIndex = 0; iIndex < sec.items.length; iIndex++) {
+      const item = sec.items[iIndex];
+      const created = await prisma.menuItem.create({
+        data: {
+          id: randomUUID(),
+          sectionId: section.id,
+          name: item.name,
+          nameAmharic: item.nameAmharic,
+          description: item.description,
+          descriptionAmharic: item.descriptionAmharic,
+          price: item.price,
+          spiceLevel: item.spiceLevel ?? 0,
+          dietaryLabels: item.dietaryLabels ?? [],
+          allergens: item.allergens ?? [],
+          prepTimeMin: item.prepTimeMin,
+          servingSize: item.servingSize,
+          isCombo: item.isCombo ?? false,
+          comboItemCount: item.comboItemCount,
+          popularityScore: item.popularityScore ?? 0,
+          isAvailable: true,
+          sortOrder: iIndex,
+        },
+      });
+
+      if (item.name === 'Kitfo') {
+        const cookingGroup = await prisma.modifierGroup.create({
+          data: {
+            id: randomUUID(),
+            menuItemId: created.id,
+            name: 'Cooking preference',
+            nameAmharic: 'የክትፎ ምግብ',
+            required: true,
+            minSelect: 1,
+            maxSelect: 1,
+            sortOrder: 0,
+          },
+        });
+        const options = [
+          { name: 'Raw (Tere)', nameAmharic: 'ቴሬ' },
+          { name: 'Leb leb', nameAmharic: 'leb leb' },
+          { name: 'Well done', nameAmharic: 'ደህንነቱ የተጠበቀ' },
+        ];
+        for (let o = 0; o < options.length; o++) {
+          await prisma.modifierOption.create({
+            data: {
+              id: randomUUID(),
+              groupId: cookingGroup.id,
+              name: options[o].name,
+              nameAmharic: options[o].nameAmharic,
+              sortOrder: o,
+            },
+          });
+        }
+      }
+    }
+    console.log(`  📋 ${sec.nameAmharic}: ${sec.items.length} items`);
   }
-  console.log(`  📋 ${appetizers.name}: ${appetizerItems.length} items`);
-
-  // Main Course
-  const mains = await prisma.menuSection.create({
-    data: {
-      id: randomUUID(),
-      menuId: menu.id,
-      name: 'Main Course',
-      sortOrder: 1,
-    },
-  });
-
-  const mainItems = [
-    {
-      name: 'Grilled Ribeye Steak',
-      description: '300g grass-fed ribeye with roasted garlic butter, seasonal vegetables, and hand-cut fries',
-      price: 28.00,
-    },
-    {
-      name: 'Pan-Seared Salmon',
-      description: 'Atlantic salmon with lemon-dill sauce, asparagus, and saffron risotto',
-      price: 24.50,
-    },
-    {
-      name: 'Wild Mushroom Risotto',
-      description: 'Arborio rice with mixed wild mushrooms, parmesan, truffle oil, and fresh herbs',
-      price: 18.00,
-    },
-    {
-      name: 'Classic Beef Burger',
-      description: 'Angus beef patty with cheddar, caramelized onions, lettuce, tomato, and house sauce on a brioche bun',
-      price: 16.50,
-    },
-  ];
-
-  for (let i = 0; i < mainItems.length; i++) {
-    await prisma.menuItem.create({
-      data: {
-        id: randomUUID(),
-        sectionId: mains.id,
-        ...mainItems[i],
-        sortOrder: i,
-      },
-    });
-  }
-  console.log(`  📋 ${mains.name}: ${mainItems.length} items`);
-
-  // Drinks
-  const drinks = await prisma.menuSection.create({
-    data: {
-      id: randomUUID(),
-      menuId: menu.id,
-      name: 'Drinks',
-      sortOrder: 2,
-    },
-  });
-
-  const drinkItems = [
-    {
-      name: 'Fresh Lemonade',
-      description: 'House-made with fresh lemons, mint, and a touch of honey',
-      price: 5.00,
-    },
-    {
-      name: 'Mango Smoothie',
-      description: 'Blended mango, banana, yogurt, and a splash of orange juice',
-      price: 7.50,
-    },
-    {
-      name: 'Espresso',
-      description: 'Double-shot single-origin espresso',
-      price: 3.50,
-    },
-  ];
-
-  for (let i = 0; i < drinkItems.length; i++) {
-    await prisma.menuItem.create({
-      data: {
-        id: randomUUID(),
-        sectionId: drinks.id,
-        ...drinkItems[i],
-        sortOrder: i,
-      },
-    });
-  }
-  console.log(`  📋 ${drinks.name}: ${drinkItems.length} items`);
 
   console.log('\n✅ Seed complete!');
-  console.log('\n📌 Login credentials:');
-  console.log('   Super Admin: superadmin@system.com / changeme');
-  console.log('   Tenant Admin: admin@demo.com / changeme');
-  console.log('   Waiter: waiter@demo.com / changeme');
-  console.log(`\n📌 Customer menu URL: http://localhost:3000/${branch.slug}?table=1`);
+  console.log('\n📌 Logins: superadmin@system.com / admin@mesob.com / waiter@mesob.com — password: changeme');
+  console.log(`📌 Menu: http://localhost:3000/${branch.slug}`);
 }
 
 main()
-  .catch((e) => {
+  .catch(e => {
     console.error('❌ Seed failed:', e);
     process.exit(1);
   })
