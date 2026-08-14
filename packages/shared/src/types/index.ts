@@ -59,7 +59,21 @@ export interface BranchResponse {
   callWaiterEnabled?: boolean;
   requestBillEnabled?: boolean;
   whatsappNumber?: string | null;
+  restaurantType?: string | null;
   setupStep?: number;
+}
+
+export interface OnboardingStatusResponse {
+  branchId: string;
+  currentStep: number;
+  completedSteps: number[];
+  nextAction: string;
+  blockingIssues: string[];
+  warnings: string[];
+  hasMenu: boolean;
+  sellableItemCount: number;
+  tableCount: number;
+  isPublished: boolean;
 }
 
 export interface MenuItemResponse {

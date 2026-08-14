@@ -20,7 +20,8 @@
 - [ ] Kitchen ticket shows modifiers vs guest notes
 
 ### Admin
-- [ ] Guided setup steps 1–7 (branch basics → publish)
+- [ ] Guided setup foundation: branch basics and guest QR/service-mode selection (steps 1–2)
+- [ ] Guided setup continuation: template, menu readiness, profile, QR materials, and publish (steps 3–7)
 - [ ] Template apply shows impact; requires confirm; backup restore works
 - [ ] Publish blocked when no sellable items or broken modifiers
 

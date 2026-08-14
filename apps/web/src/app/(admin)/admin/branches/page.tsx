@@ -25,10 +25,10 @@ export default function Branches() {
 
   const handleCreate = async () => {
     try {
-      await apiClient.createBranch({ name: newBranchName, slug: newBranchName.toLowerCase().replace(/[^a-z0-9]+/g, '-') });
+      const branch = await apiClient.createBranch({ name: newBranchName, slug: newBranchName.toLowerCase().replace(/[^a-z0-9]+/g, '-') });
       setIsModalOpen(false);
       setNewBranchName('');
-      fetchBranches();
+      router.push(`/admin/onboarding/${branch.id}`);
     } catch (e) {
       console.error(e);
       alert('Failed to create branch');
@@ -67,6 +67,7 @@ export default function Branches() {
             <h2 style={{ margin: 0 }}>{branch.name}</h2>
             <p style={{ margin: 0, color: 'var(--color-text-muted)' }}>/{branch.slug}</p>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
+              {branch.setupStep !== 7 && <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => router.push(`/admin/onboarding/${branch.id}`)}>Set up</button>}
               <button className="btn" style={{ flex: 1, border: '1px solid var(--color-border)' }} onClick={() => router.push(`/admin/menus/${branch.id}`)}>Menu</button>
               <button className="btn" style={{ flex: 1, border: '1px solid var(--color-border)' }} onClick={() => router.push(`/admin/branches/${branch.id}`)}>Profile</button>
               <button className="btn" style={{ flex: 1, border: '1px solid var(--color-border)' }} onClick={() => router.push(`/admin/tables/${branch.id}`)}>Tables</button>

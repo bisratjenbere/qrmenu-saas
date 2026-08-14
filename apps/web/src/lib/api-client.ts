@@ -13,6 +13,7 @@ import {
   FulfillmentType,
   CreateOrderInput,
   LoginInput,
+  OnboardingStatusResponse,
 } from '@qrmenu/shared';
 
 const BASE_URL = typeof window !== 'undefined' ? '' : 'http://localhost:3001';
@@ -33,7 +34,7 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise
 
   if (response.status === 401 && typeof window !== 'undefined') {
     localStorage.removeItem('token');
-    window.location.href = '/staff/login';
+    window.location.href = window.location.pathname.startsWith('/staff') ? '/staff/login' : '/admin/login';
   }
 
   if (!response.ok) {
@@ -66,6 +67,8 @@ export const apiClient = {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
+  fetchOnboardingStatus: (branchId: string) =>
+    fetchApi<OnboardingStatusResponse>(`/admin/branches/${branchId}/onboarding`),
 
   fetchOrders: (branchId: string, status?: string) =>
     fetchApi<OrderResponse[]>(

@@ -141,7 +141,11 @@ model Branch {
   callWaiterEnabled    Boolean         @default(false) @map("call_waiter_enabled")
   requestBillEnabled   Boolean         @default(false) @map("request_bill_enabled")
   whatsappNumber       String?         @map("whatsapp_number")
+  restaurantType       String?         @map("restaurant_type")
   setupStep            Int             @default(0) @map("setup_step")
+  setupStartedAt       DateTime?       @map("setup_started_at")
+  setupCompletedAt     DateTime?       @map("setup_completed_at")
+  firstPublishedAt     DateTime?       @map("first_published_at")
   setupDraftBackupJson String?         @map("setup_draft_backup_json") @db.Text
   createdAt            DateTime        @default(now()) @map("created_at")
 

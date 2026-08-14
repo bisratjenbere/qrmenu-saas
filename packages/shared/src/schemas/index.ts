@@ -40,6 +40,7 @@ export type CreateBranchInput = z.infer<typeof createBranchSchema>;
 
 export const updateBranchSchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
+  restaurantType: z.string().trim().min(1).max(50).nullable().optional(),
   qrMode: z.nativeEnum(QrMode).optional(),
   serviceMode: z.nativeEnum(ServiceMode).optional(),
   tagline: z.string().trim().max(200).nullable().optional(),

@@ -44,7 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('staff');
     setToken(null);
     setStaff(null);
-    window.location.href = '/staff/login';
+    window.location.href = window.location.pathname.startsWith('/staff') ? '/staff/login' : '/admin/login';
   };
 
   return (

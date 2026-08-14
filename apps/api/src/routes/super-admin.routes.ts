@@ -113,7 +113,7 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
         data: {
           branchId: branch.id,
           name: 'Main Menu',
-          status: 'PUBLISHED',
+          status: 'DRAFT',
         },
       });
 

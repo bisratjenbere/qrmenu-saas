@@ -16,7 +16,10 @@ export default function AdminLogin() {
       if (res.staff.role === 'SUPER_ADMIN') {
         router.push('/super-admin/tenants');
       } else {
-        router.push('/admin/branches');
+        const branches = await apiClient.fetchBranches();
+        const statuses = await Promise.all(branches.map(branch => apiClient.fetchOnboardingStatus(branch.id)));
+        const branchToSetUp = branches.find((branch, index) => statuses[index].currentStep < 2);
+        router.push(branchToSetUp ? `/admin/onboarding/${branchToSetUp.id}` : '/admin/branches');
       }
     } catch (e: any) {
       alert(e.message || 'Login failed');
