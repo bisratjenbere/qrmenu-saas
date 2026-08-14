@@ -250,9 +250,33 @@ export type GenerateQrInput = z.infer<typeof generateQrSchema>;
 
 // ─── Template apply ─────────────────────────────────
 
+const templateItemSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  nameAmharic: z.string().trim().max(120).optional(),
+  description: z.string().trim().max(1000).optional(),
+  descriptionAmharic: z.string().trim().max(1000).optional(),
+  price: z.number().positive(),
+  spiceLevel: z.number().int().min(0).max(3).optional(),
+  dietaryLabels: z.array(z.string()).optional(),
+  allergens: z.array(z.string()).optional(),
+  servingSize: z.string().trim().max(100).optional(),
+  isCombo: z.boolean().optional(),
+  comboItemCount: z.number().int().positive().optional(),
+  comboPrice: z.number().positive().optional(),
+  prepTimeMin: z.number().int().positive().optional(),
+});
+
+export const menuTemplateSectionsSchema = z.array(z.object({
+  name: z.string().trim().min(1).max(100),
+  nameAmharic: z.string().trim().max(100).optional(),
+  timeSlot: z.enum(['ALL_DAY', 'BREAKFAST', 'LUNCH_DINNER']).optional(),
+  isVisible: z.boolean().optional(),
+  items: z.array(templateItemSchema).min(1),
+})).min(1);
+
 export const applyTemplateSchema = z.object({
   templateId: z.string().uuid().optional(),
-  sections: z.array(z.any()).optional(),
+  sections: menuTemplateSectionsSchema.optional(),
   confirmReplace: z.boolean().optional(),
 });
 export type ApplyTemplateInput = z.infer<typeof applyTemplateSchema>;

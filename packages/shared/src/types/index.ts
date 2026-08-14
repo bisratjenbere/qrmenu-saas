@@ -110,6 +110,7 @@ export interface MenuResponse {
     qrMode: QrMode;
     serviceMode: ServiceMode;
     coverImageUrl?: string | null;
+    themeId?: string;
     logoUrl?: string | null;
     tagline?: string | null;
     description?: string | null;

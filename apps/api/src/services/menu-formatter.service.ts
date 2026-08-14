@@ -33,6 +33,7 @@ export function formatPublicMenu(branch: any, menu: any): MenuResponse {
       slug: branch.slug,
       qrMode: branch.qrMode,
       serviceMode: branch.serviceMode,
+      themeId: branch.themeId,
       coverImageUrl: branch.coverImageUrl,
       logoUrl: branch.logoUrl,
       tagline: branch.tagline,

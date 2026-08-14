@@ -132,11 +132,20 @@ export default function MenusAdmin() {
   const handleApplyTemplate = async (templateId: string) => {
     if (!menu) return;
     try {
-      await apiClient.applyTemplate(menu.id, templateId);
-      showToast('Template applied!', 'success');
+      const impact = await apiClient.templateImpact(menu.id);
+      const hasExistingContent = impact.sectionsToReplace > 0 || impact.itemsToReplace > 0;
+      const confirmed = window.confirm(
+        hasExistingContent
+          ? `Applying this template will replace ${impact.sectionsToReplace} section(s), ${impact.itemsToReplace} item(s), and ${impact.modifierGroupsAffected} modifier group(s). A backup will be saved. Continue?`
+          : 'Applying this template will add its starter sections and items to this empty menu. You can edit every detail afterwards. Continue?'
+      );
+      if (!confirmed) return;
+
+      await apiClient.applyTemplate(menu.id, templateId, undefined, true);
+      showToast('Template applied. Review prices and availability before publishing.', 'success');
       fetchMenuData();
-    } catch (e) {
-      showToast('Failed to apply template', 'error');
+    } catch (e: any) {
+      showToast(e.message || 'Failed to apply template', 'error');
     }
   };
 

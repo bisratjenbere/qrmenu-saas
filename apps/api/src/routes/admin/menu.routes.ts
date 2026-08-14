@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { applyTemplateSchema } from '@qrmenu/shared';
+import { applyTemplateSchema, menuTemplateSectionsSchema } from '@qrmenu/shared';
 import { requireAdmin } from '../../middleware/auth.middleware.js';
 import { NotFoundError, ValidationError } from '../../utils/errors.js';
 import {
@@ -253,7 +253,13 @@ export async function adminMenuRoutes(fastify: FastifyInstance) {
       const template = await fastify.prisma.menuPresetTemplate.findUnique({
         where: { id: body.templateId },
       });
-      if (template) templateSections = JSON.parse(template.sectionsJson);
+      if (template) {
+        try {
+          templateSections = menuTemplateSectionsSchema.parse(JSON.parse(template.sectionsJson));
+        } catch {
+          throw new ValidationError('This template has invalid or incomplete menu content');
+        }
+      }
     }
 
     if (!templateSections || !Array.isArray(templateSections)) {

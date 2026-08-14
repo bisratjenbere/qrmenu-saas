@@ -1,8 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import bcrypt from 'bcryptjs';
-import { createTenantSchema, updateTenantSchema } from '@qrmenu/shared';
+import { createTenantSchema, updateTenantSchema, menuTemplateSectionsSchema } from '@qrmenu/shared';
 import { requireSuperAdmin, signToken } from '../middleware/auth.middleware.js';
-import { NotFoundError, ConflictError } from '../utils/errors.js';
+import { NotFoundError, ConflictError, ValidationError } from '../utils/errors.js';
 
 export async function superAdminRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireSuperAdmin);
@@ -349,7 +349,14 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
   fastify.post('/templates', async (request: any, reply) => {
     const { name, nameAmharic, description, category, sectionsJson } = request.body || {};
     if (!name || !sectionsJson) {
-      throw new Error('Name and sectionsJson are required');
+      throw new ValidationError('Name and menu sections are required');
+    }
+    let validSections;
+    try {
+      const rawSections = typeof sectionsJson === 'string' ? JSON.parse(sectionsJson) : sectionsJson;
+      validSections = menuTemplateSectionsSchema.parse(rawSections);
+    } catch {
+      throw new ValidationError('Template must include at least one section with one priced item');
     }
     const created = await fastify.prisma.menuPresetTemplate.create({
       data: {
@@ -357,7 +364,7 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
         nameAmharic: nameAmharic || null,
         description: description || null,
         category: category || 'General',
-        sectionsJson: typeof sectionsJson === 'string' ? sectionsJson : JSON.stringify(sectionsJson)
+        sectionsJson: JSON.stringify(validSections)
       },
     });
     return reply.status(201).send({
@@ -374,6 +381,15 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
   fastify.patch('/templates/:id', async (request: any, reply) => {
     const { id } = request.params;
     const { name, nameAmharic, description, category, sectionsJson } = request.body || {};
+    let normalizedSectionsJson: string | undefined;
+    if (sectionsJson !== undefined) {
+      try {
+        const rawSections = typeof sectionsJson === 'string' ? JSON.parse(sectionsJson) : sectionsJson;
+        normalizedSectionsJson = JSON.stringify(menuTemplateSectionsSchema.parse(rawSections));
+      } catch {
+        throw new ValidationError('Template must include at least one section with one priced item');
+      }
+    }
     const updated = await fastify.prisma.menuPresetTemplate.update({
       where: { id },
       data: {
@@ -381,7 +397,7 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
         ...(nameAmharic !== undefined && { nameAmharic }),
         ...(description !== undefined && { description }),
         ...(category && { category }),
-        ...(sectionsJson && { sectionsJson: typeof sectionsJson === 'string' ? sectionsJson : JSON.stringify(sectionsJson) }),
+        ...(normalizedSectionsJson !== undefined && { sectionsJson: normalizedSectionsJson }),
       }
     });
     return reply.status(200).send({

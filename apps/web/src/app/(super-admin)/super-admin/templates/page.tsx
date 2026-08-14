@@ -17,6 +17,79 @@ import {
   AlertCircle
 } from 'lucide-react';
 
+type TemplateItemDraft = {
+  name: string;
+  nameAmharic?: string;
+  description?: string;
+  price: number;
+  dietaryLabels?: string[];
+  spiceLevel?: number;
+};
+
+type TemplateSectionDraft = {
+  name: string;
+  nameAmharic?: string;
+  timeSlot?: 'ALL_DAY' | 'BREAKFAST' | 'LUNCH_DINNER';
+  items: TemplateItemDraft[];
+};
+
+const DEFAULT_TEMPLATE_SECTIONS: TemplateSectionDraft[] = [
+  {
+    name: 'Fasting dishes',
+    items: [
+      {
+        name: 'Shiro Wot',
+        description: 'Chickpea stew served with injera.',
+        price: 280,
+        dietaryLabels: ['FASTING', 'VEGAN'],
+        spiceLevel: 1,
+      },
+    ],
+  },
+  {
+    name: 'Traditional favourites',
+    items: [
+      {
+        name: 'Doro Wot',
+        description: 'Slow-cooked chicken stew with a boiled egg.',
+        price: 520,
+        spiceLevel: 2,
+      },
+    ],
+  },
+];
+
+const DEFAULT_SECTIONS_JSON = JSON.stringify(DEFAULT_TEMPLATE_SECTIONS, null, 2);
+
+const parseSectionsForEditor = (raw: string): TemplateSectionDraft[] => {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.map((section: any) => ({
+      ...section,
+      name: typeof section?.name === 'string' ? section.name : '',
+      nameAmharic: typeof section?.nameAmharic === 'string' ? section.nameAmharic : '',
+      timeSlot: ['ALL_DAY', 'BREAKFAST', 'LUNCH_DINNER'].includes(section?.timeSlot)
+        ? section.timeSlot
+        : 'ALL_DAY',
+      items: Array.isArray(section?.items)
+        ? section.items.map((item: any) => ({
+            ...item,
+            name: typeof item?.name === 'string' ? item.name : '',
+            nameAmharic: typeof item?.nameAmharic === 'string' ? item.nameAmharic : '',
+            description: typeof item?.description === 'string' ? item.description : '',
+            price: typeof item?.price === 'number' ? item.price : 0,
+            dietaryLabels: Array.isArray(item?.dietaryLabels) ? item.dietaryLabels : [],
+            spiceLevel: typeof item?.spiceLevel === 'number' ? item.spiceLevel : 0,
+          }))
+        : [],
+    }));
+  } catch {
+    return [];
+  }
+};
+
 export default function SuperAdminTemplatesPage() {
   const [templates, setTemplates] = useState<MenuPresetTemplateResponse[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,13 +103,33 @@ export default function SuperAdminTemplatesPage() {
   const [nameAmharic, setNameAmharic] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('Full Restaurant');
-  const [sectionsJson, setSectionsJson] = useState('[\n  "Starters",\n  "Mains",\n  "Desserts",\n  "Beverages"\n]');
+  const [sectionsJson, setSectionsJson] = useState(DEFAULT_SECTIONS_JSON);
   
   const [submitting, setSubmitting] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const editorSections = parseSectionsForEditor(sectionsJson);
+  const updateEditorSections = (next: TemplateSectionDraft[]) => {
+    setSectionsJson(JSON.stringify(next, null, 2));
+  };
+  const updateSection = (sectionIndex: number, patch: Partial<TemplateSectionDraft>) => {
+    updateEditorSections(editorSections.map((section, index) => index === sectionIndex ? { ...section, ...patch } : section));
+  };
+  const updateItem = (sectionIndex: number, itemIndex: number, patch: Partial<TemplateItemDraft>) => {
+    updateEditorSections(editorSections.map((section, index) => index === sectionIndex
+      ? { ...section, items: section.items.map((item, itemIndex_) => itemIndex_ === itemIndex ? { ...item, ...patch } : item) }
+      : section));
+  };
+  const addSection = () => updateEditorSections([
+    ...editorSections,
+    { name: '', nameAmharic: '', timeSlot: 'ALL_DAY', items: [{ name: '', nameAmharic: '', description: '', price: 0, dietaryLabels: [], spiceLevel: 0 }] },
+  ]);
+  const addItem = (sectionIndex: number) => updateEditorSections(editorSections.map((section, index) => index === sectionIndex
+    ? { ...section, items: [...section.items, { name: '', nameAmharic: '', description: '', price: 0, dietaryLabels: [], spiceLevel: 0 }] }
+    : section));
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -70,7 +163,7 @@ export default function SuperAdminTemplatesPage() {
     setNameAmharic('');
     setDescription('');
     setCategory('Full Restaurant');
-    setSectionsJson('[\n  "Starters",\n  "Mains",\n  "Desserts",\n  "Beverages"\n]');
+    setSectionsJson(DEFAULT_SECTIONS_JSON);
     setIsModalOpen(true);
   };
 
@@ -100,6 +193,19 @@ export default function SuperAdminTemplatesPage() {
       parsedJson = JSON.parse(sectionsJson);
     } catch (e) {
       setToastMessage('Invalid JSON format for sections');
+      setToastType('error');
+      setTimeout(() => setToastMessage(''), 3000);
+      setSubmitting(false);
+      return;
+    }
+
+    const hasInvalidContent = !Array.isArray(parsedJson) || parsedJson.length === 0 || parsedJson.some(
+      (section: TemplateSectionDraft) => !section.name.trim() || !section.items?.length || section.items.some(
+        (item: TemplateItemDraft) => !item.name.trim() || !Number.isFinite(item.price) || item.price <= 0
+      )
+    );
+    if (hasInvalidContent) {
+      setToastMessage('Add a section name and at least one priced item to every section');
       setToastType('error');
       setTimeout(() => setToastMessage(''), 3000);
       setSubmitting(false);
@@ -166,14 +272,14 @@ export default function SuperAdminTemplatesPage() {
         description: 'Comprehensive setup for a full-scale traditional Ethiopian dining experience.',
         category: 'Traditional',
         sectionsJson: JSON.stringify([
-          { name: 'Appetizers', itemsCount: 4 },
-          { name: 'Tibs (Meat)', itemsCount: 12 },
-          { name: 'Wot (Stews)', itemsCount: 10 },
-          { name: 'Kitfo & Raw Meats', itemsCount: 6 },
-          { name: 'Vegetarian / Vegan', itemsCount: 8 },
-          { name: 'Special Combos', itemsCount: 3 },
-          { name: 'Hot Beverages', itemsCount: 5 },
-          { name: 'Cold Beverages', itemsCount: 6 }
+          { name: 'Appetizers', items: [{ name: 'Azifa', description: 'Seasoned green lentil salad.', price: 220, dietaryLabels: ['FASTING', 'VEGAN'] }] },
+          { name: 'Tibs (Meat)', items: [{ name: 'Lamb Tibs', description: 'Sautéed lamb with rosemary and onions.', price: 560, spiceLevel: 1 }] },
+          { name: 'Wot (Stews)', items: [{ name: 'Doro Wot', description: 'Slow-cooked chicken stew with a boiled egg.', price: 520, spiceLevel: 2 }] },
+          { name: 'Kitfo & Raw Meats', items: [{ name: 'Kitfo', description: 'Minced beef seasoned with mitmita and kibbeh.', price: 580, spiceLevel: 2 }] },
+          { name: 'Vegetarian / Vegan', items: [{ name: 'Shiro Wot', description: 'Chickpea stew served with injera.', price: 280, dietaryLabels: ['FASTING', 'VEGAN'], spiceLevel: 1 }] },
+          { name: 'Special Combos', items: [{ name: 'Beyaynetu', description: 'A selection of Ethiopian stews served on injera.', price: 480, isCombo: true, comboItemCount: 5, comboPrice: 480 }] },
+          { name: 'Hot Beverages', items: [{ name: 'Ethiopian Coffee', description: 'Freshly brewed Ethiopian coffee.', price: 90 }] },
+          { name: 'Cold Beverages', items: [{ name: 'Fresh Mango Juice', description: 'Freshly blended mango juice.', price: 150 }] }
         ])
       },
       {
@@ -182,10 +288,10 @@ export default function SuperAdminTemplatesPage() {
         description: 'Perfect for coffee shops, pastry houses, and light breakfast spots.',
         category: 'Cafe',
         sectionsJson: JSON.stringify([
-          { name: 'Hot Coffee & Tea', itemsCount: 8 },
-          { name: 'Fresh Juices & Smoothies', itemsCount: 6 },
-          { name: 'Pastries & Cakes', itemsCount: 12 },
-          { name: 'Breakfast & Light Bites', itemsCount: 5 }
+          { name: 'Hot Coffee & Tea', items: [{ name: 'Ethiopian Coffee', description: 'Freshly brewed Ethiopian coffee.', price: 90 }] },
+          { name: 'Fresh Juices & Smoothies', items: [{ name: 'Avocado Juice', description: 'Fresh avocado blended with milk.', price: 170 }] },
+          { name: 'Pastries & Cakes', items: [{ name: 'Butter Croissant', description: 'Freshly baked butter croissant.', price: 110 }] },
+          { name: 'Breakfast & Light Bites', timeSlot: 'BREAKFAST', items: [{ name: 'Chechebsa', description: 'Torn flatbread with spiced butter and berbere.', price: 220 }] }
         ])
       },
       {
@@ -194,11 +300,11 @@ export default function SuperAdminTemplatesPage() {
         description: 'Dedicated entirely to vegan, fasting (Tsome) dishes for fasting seasons.',
         category: 'Vegan/Fasting',
         sectionsJson: JSON.stringify([
-          { name: 'Fasting Starters', itemsCount: 4 },
-          { name: 'Shiro & Lentils', itemsCount: 8 },
-          { name: 'Vegetable Stews', itemsCount: 6 },
-          { name: 'Beyeaynetu Combos', itemsCount: 3 },
-          { name: 'Juices & Beverages', itemsCount: 6 }
+          { name: 'Fasting Starters', items: [{ name: 'Azifa', description: 'Seasoned green lentil salad.', price: 220, dietaryLabels: ['FASTING', 'VEGAN'] }] },
+          { name: 'Shiro & Lentils', items: [{ name: 'Shiro Wot', description: 'Chickpea stew served with injera.', price: 280, dietaryLabels: ['FASTING', 'VEGAN'], spiceLevel: 1 }] },
+          { name: 'Vegetable Stews', items: [{ name: 'Gomen', description: 'Seasoned Ethiopian collard greens.', price: 240, dietaryLabels: ['FASTING', 'VEGAN'] }] },
+          { name: 'Beyaynetu Combos', items: [{ name: 'Yetsom Beyaynetu', description: 'A selection of fasting stews served on injera.', price: 420, dietaryLabels: ['FASTING', 'VEGAN'], isCombo: true, comboItemCount: 5, comboPrice: 420 }] },
+          { name: 'Juices & Beverages', items: [{ name: 'Fresh Mango Juice', description: 'Freshly blended mango juice.', price: 150 }] }
         ])
       },
       {
@@ -207,12 +313,12 @@ export default function SuperAdminTemplatesPage() {
         description: 'A blend of local and international cuisines for upscale dining.',
         category: 'Bistro/Lounge',
         sectionsJson: JSON.stringify([
-          { name: 'Starters & Salads', itemsCount: 6 },
-          { name: 'Burgers & Sandwiches', itemsCount: 8 },
-          { name: 'Pasta & Pizza', itemsCount: 10 },
-          { name: 'Grill & Steaks', itemsCount: 5 },
-          { name: 'Desserts', itemsCount: 4 },
-          { name: 'Cocktails & Beverages', itemsCount: 12 }
+          { name: 'Starters & Salads', items: [{ name: 'Avocado Salad', description: 'Avocado, tomato, onion, and lemon dressing.', price: 250, dietaryLabels: ['VEGAN'] }] },
+          { name: 'Burgers & Sandwiches', items: [{ name: 'Beef Burger', description: 'Grilled beef patty with fries.', price: 420 }] },
+          { name: 'Pasta & Pizza', items: [{ name: 'Chicken Pasta', description: 'Creamy pasta with grilled chicken.', price: 430 }] },
+          { name: 'Grill & Steaks', items: [{ name: 'Beef Steak', description: 'Grilled steak served with seasonal vegetables.', price: 690 }] },
+          { name: 'Desserts', items: [{ name: 'Chocolate Cake', description: 'Chocolate cake slice.', price: 180 }] },
+          { name: 'Cocktails & Beverages', items: [{ name: 'Fresh Mango Juice', description: 'Freshly blended mango juice.', price: 150 }] }
         ])
       }
     ];
@@ -382,9 +488,8 @@ export default function SuperAdminTemplatesPage() {
               sections = [];
             }
             
-            // Calculate total items if structured as objects, otherwise just count sections
             const isDetailed = sections.length > 0 && typeof sections[0] === 'object' && sections[0].name;
-            const totalItems = isDetailed ? sections.reduce((acc, curr) => acc + (curr.itemsCount || 0), 0) : 0;
+            const totalItems = isDetailed ? sections.reduce((acc, curr) => acc + (curr.items?.length || 0), 0) : 0;
             const sectionCount = sections.length;
 
             return (
@@ -511,7 +616,7 @@ export default function SuperAdminTemplatesPage() {
               {editingId ? 'Edit Preset Template' : 'Create Preset Template'}
             </h2>
             <p style={{ color: '#94a3b8', fontSize: '0.875rem', marginBottom: '2rem' }}>
-              Configure a starter sections blueprint for 1-tap tenant onboarding.
+              Create a bilingual starter menu with real, editable items for one-tap tenant onboarding.
             </p>
 
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
@@ -573,18 +678,37 @@ export default function SuperAdminTemplatesPage() {
               <div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.375rem' }}>
                   <Code size={16} />
-                  Sections Layout (JSON)
+                  Menu content
                 </label>
                 <p style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.5rem' }}>
-                  Provide an array of strings, or array of objects with `name` and `itemsCount`.
+                  Add the starter sections and items a restaurant should review before publishing. Prices are in ETB.
                 </p>
-                <textarea
-                  required
-                  value={sectionsJson}
-                  onChange={e => setSectionsJson(e.target.value)}
-                  rows={8}
-                  style={{ width: '100%', padding: '0.75rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: '#10b981', fontSize: '0.875rem', fontFamily: 'monospace', outline: 'none', resize: 'vertical' }}
-                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  {editorSections.map((section, sectionIndex) => (
+                    <div key={sectionIndex} style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '0.75rem', padding: '0.875rem' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                        <input required placeholder="Section name" value={section.name} onChange={e => updateSection(sectionIndex, { name: e.target.value })} style={{ padding: '0.625rem', background: '#1e293b', border: '1px solid #475569', borderRadius: '0.375rem', color: '#f8fafc', outline: 'none' }} />
+                        <input placeholder="Amharic name (optional)" value={section.nameAmharic || ''} onChange={e => updateSection(sectionIndex, { nameAmharic: e.target.value })} style={{ padding: '0.625rem', background: '#1e293b', border: '1px solid #475569', borderRadius: '0.375rem', color: '#f8fafc', outline: 'none' }} />
+                        <button type="button" aria-label="Remove section" onClick={() => updateEditorSections(editorSections.filter((_, index) => index !== sectionIndex))} style={{ background: 'transparent', color: '#f87171', border: '1px solid #7f1d1d', borderRadius: '0.375rem', padding: '0.5rem', cursor: 'pointer' }}><Trash2 size={16} /></button>
+                      </div>
+                      <select value={section.timeSlot || 'ALL_DAY'} onChange={e => updateSection(sectionIndex, { timeSlot: e.target.value as TemplateSectionDraft['timeSlot'] })} style={{ marginBottom: '0.75rem', padding: '0.5rem', background: '#1e293b', border: '1px solid #475569', borderRadius: '0.375rem', color: '#cbd5e1' }}>
+                        <option value="ALL_DAY">All day</option>
+                        <option value="BREAKFAST">Breakfast only</option>
+                        <option value="LUNCH_DINNER">Lunch and dinner</option>
+                      </select>
+                      {section.items.map((item, itemIndex) => (
+                        <div key={itemIndex} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px auto', gap: '0.5rem', marginTop: '0.5rem' }}>
+                          <input required placeholder="Item name" value={item.name} onChange={e => updateItem(sectionIndex, itemIndex, { name: e.target.value })} style={{ padding: '0.625rem', background: '#1e293b', border: '1px solid #475569', borderRadius: '0.375rem', color: '#f8fafc', outline: 'none' }} />
+                          <input placeholder="Amharic name (optional)" value={item.nameAmharic || ''} onChange={e => updateItem(sectionIndex, itemIndex, { nameAmharic: e.target.value })} style={{ padding: '0.625rem', background: '#1e293b', border: '1px solid #475569', borderRadius: '0.375rem', color: '#f8fafc', outline: 'none' }} />
+                          <input required type="number" min="0.01" step="0.01" aria-label="Price in ETB" placeholder="ETB" value={item.price || ''} onChange={e => updateItem(sectionIndex, itemIndex, { price: Number(e.target.value) })} style={{ padding: '0.625rem', background: '#1e293b', border: '1px solid #475569', borderRadius: '0.375rem', color: '#f8fafc', outline: 'none' }} />
+                          <button type="button" aria-label="Remove item" onClick={() => updateSection(sectionIndex, { items: section.items.filter((_, index) => index !== itemIndex) })} style={{ background: 'transparent', color: '#f87171', border: '1px solid #7f1d1d', borderRadius: '0.375rem', padding: '0.5rem', cursor: 'pointer' }}><Trash2 size={16} /></button>
+                        </div>
+                      ))}
+                      <button type="button" onClick={() => addItem(sectionIndex)} style={{ marginTop: '0.75rem', background: 'transparent', color: '#60a5fa', border: '1px solid #1d4ed8', borderRadius: '0.375rem', padding: '0.5rem 0.75rem', cursor: 'pointer', fontWeight: 600 }}>Add item</button>
+                    </div>
+                  ))}
+                  <button type="button" onClick={addSection} style={{ background: 'transparent', color: '#60a5fa', border: '1px dashed #2563eb', borderRadius: '0.5rem', padding: '0.75rem', cursor: 'pointer', fontWeight: 600 }}>Add section</button>
+                </div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #334155' }}>
