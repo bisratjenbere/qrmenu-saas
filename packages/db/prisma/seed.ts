@@ -1,3 +1,9 @@
+import dotenv from 'dotenv';
+import path from 'path';
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config();
+
 import { PrismaClient, QrMode, MenuStatus, StaffRole, ServiceMode } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import bcrypt from 'bcryptjs';
@@ -39,6 +45,14 @@ async function main() {
       primaryLanguage: 'AM',
       enableTakeaway: true,
       setupStep: 7,
+      logoUrl: ETHIOPIAN_DEMO_BRANCH.logoUrl,
+      coverImageUrl: ETHIOPIAN_DEMO_BRANCH.coverImageUrl,
+      description: ETHIOPIAN_DEMO_BRANCH.description,
+      address: ETHIOPIAN_DEMO_BRANCH.address,
+      phone: ETHIOPIAN_DEMO_BRANCH.phone,
+      mapUrl: ETHIOPIAN_DEMO_BRANCH.mapUrl,
+      callWaiterEnabled: ETHIOPIAN_DEMO_BRANCH.callWaiterEnabled,
+      requestBillEnabled: ETHIOPIAN_DEMO_BRANCH.requestBillEnabled,
     },
     create: {
       id: randomUUID(),
@@ -54,6 +68,14 @@ async function main() {
       primaryLanguage: 'AM',
       enableTakeaway: true,
       setupStep: 7,
+      logoUrl: ETHIOPIAN_DEMO_BRANCH.logoUrl,
+      coverImageUrl: ETHIOPIAN_DEMO_BRANCH.coverImageUrl,
+      description: ETHIOPIAN_DEMO_BRANCH.description,
+      address: ETHIOPIAN_DEMO_BRANCH.address,
+      phone: ETHIOPIAN_DEMO_BRANCH.phone,
+      mapUrl: ETHIOPIAN_DEMO_BRANCH.mapUrl,
+      callWaiterEnabled: ETHIOPIAN_DEMO_BRANCH.callWaiterEnabled,
+      requestBillEnabled: ETHIOPIAN_DEMO_BRANCH.requestBillEnabled,
     },
   });
   console.log(`✅ Branch: ${branch.name} (${branch.slug})`);
@@ -165,6 +187,7 @@ async function main() {
           isCombo: item.isCombo ?? false,
           comboItemCount: item.comboItemCount,
           popularityScore: item.popularityScore ?? 0,
+          photoUrl: item.photoUrl,
           isAvailable: true,
           sortOrder: iIndex,
         },
