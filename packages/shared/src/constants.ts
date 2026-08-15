@@ -5,6 +5,13 @@ export const ServiceMode = {
   SINGLE_QR_SELF_ORDER: 'SINGLE_QR_SELF_ORDER',
   PER_TABLE_QR: 'PER_TABLE_QR',
 } as const;
+
+export const OperationsMode = {
+  SIMPLE_SERVICE: 'SIMPLE_SERVICE',
+  TABLE_SERVICE: 'TABLE_SERVICE',
+  KITCHEN_AND_SERVICE: 'KITCHEN_AND_SERVICE',
+} as const;
+export type OperationsMode = (typeof OperationsMode)[keyof typeof OperationsMode];
 export type ServiceMode = (typeof ServiceMode)[keyof typeof ServiceMode];
 
 export const QrMode = {

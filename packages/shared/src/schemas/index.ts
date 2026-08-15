@@ -8,6 +8,7 @@ import {
   OrderStatus,
   QrMode,
   ServiceMode,
+  OperationsMode,
   StaffRole,
   TableInputMode,
   FulfillmentType,
@@ -43,6 +44,7 @@ export const updateBranchSchema = z.object({
   restaurantType: z.string().trim().min(1).max(50).nullable().optional(),
   qrMode: z.nativeEnum(QrMode).optional(),
   serviceMode: z.nativeEnum(ServiceMode).optional(),
+  operationsMode: z.nativeEnum(OperationsMode).optional(),
   tagline: z.string().trim().max(200).nullable().optional(),
   description: z.string().trim().max(2_000).nullable().optional(),
   coverImageUrl: z.string().url().nullable().optional(),
@@ -68,6 +70,18 @@ export const updateBranchSchema = z.object({
   setupStep: z.number().int().min(0).max(7).optional(),
 });
 export type UpdateBranchInput = z.infer<typeof updateBranchSchema>;
+
+export const createBillRequestSchema = z.object({
+  branchId: z.string().uuid(),
+  tableNumber: z.string().trim().min(1).max(MAX_TABLE_LABEL_LENGTH).optional(),
+  tableToken: z.string().uuid().optional(),
+  guestName: z.string().trim().min(1).max(100).optional(),
+  guestPhone: z.string().trim().min(5).max(30).optional(),
+  pickupNote: z.string().trim().max(MAX_NOTE_LENGTH).optional(),
+  pickupTime: z.string().trim().max(60).optional(),
+  idempotencyKey: z.string().uuid(),
+});
+export type CreateBillRequestInput = z.infer<typeof createBillRequestSchema>;
 
 // ─── Menu ───────────────────────────────────────────
 
@@ -203,6 +217,10 @@ export const createOrderSchema = z.object({
   tableNumber: z.string().trim().max(MAX_TABLE_LABEL_LENGTH).optional(),
   tableToken: z.string().uuid().optional(),
   idempotencyKey: z.string().uuid(),
+  guestName: z.string().trim().max(100).nullable().optional(),
+  guestPhone: z.string().trim().max(30).nullable().optional(),
+  pickupNote: z.string().trim().max(500).nullable().optional(),
+  pickupTime: z.string().trim().max(50).nullable().optional(),
   items: z
     .array(orderItemSchema)
     .min(1, 'Order must have at least one item')

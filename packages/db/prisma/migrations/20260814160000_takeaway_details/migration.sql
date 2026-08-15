@@ -1,0 +1,4 @@
+ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "guest_name" TEXT;
+ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "guest_phone" TEXT;
+ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "pickup_note" TEXT;
+ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "pickup_time" TEXT;

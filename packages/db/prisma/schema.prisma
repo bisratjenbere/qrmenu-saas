@@ -67,6 +67,18 @@ enum OrderItemStatus {
   READY
 }
 
+enum OperationsMode {
+  SIMPLE_SERVICE
+  TABLE_SERVICE
+  KITCHEN_AND_SERVICE
+}
+
+enum ServiceRequestStatus {
+  REQUESTED
+  ACKNOWLEDGED
+  COMPLETED
+}
+
 enum DomainStatus {
   PENDING
   VERIFIED
@@ -118,6 +130,7 @@ model Branch {
   slug                 String          @unique
   qrMode               QrMode          @default(SINGLE) @map("qr_mode")
   serviceMode          ServiceMode     @default(SINGLE_QR_SELF_ORDER) @map("service_mode")
+  operationsMode       OperationsMode  @default(SIMPLE_SERVICE) @map("operations_mode")
   coverImageUrl        String?         @map("cover_image_url")
   logoUrl              String?         @map("logo_url")
   tagline              String?
@@ -153,6 +166,7 @@ model Branch {
   menus   Menu[]
   tables  Table[]
   orders  Order[]
+  serviceRequests ServiceRequest[]
   staff   Staff[]
 
   @@map("branches")
@@ -308,6 +322,11 @@ model Order {
   tableId             String?         @map("table_id")
   status              OrderStatus     @default(NEW)
   idempotencyKey      String          @unique @map("idempotency_key")
+  guestAccessToken    String          @unique @default(uuid()) @map("guest_access_token")
+  guestName           String?         @map("guest_name")
+  guestPhone          String?         @map("guest_phone")
+  pickupNote          String?         @map("pickup_note")
+  pickupTime          String?         @map("pickup_time")
   currency            String          @default("ETB")
   subtotal            Decimal         @default(0) @db.Decimal(12, 2)
   serviceChargeRate   Decimal         @default(0) @map("service_charge_rate") @db.Decimal(5, 2)
@@ -322,6 +341,27 @@ model Order {
 
   @@index([branchId, status, createdAt])
   @@map("orders")
+}
+
+// ─── Guest service requests ───────────────────────────────────────────────
+
+model ServiceRequest {
+  id             String               @id @default(uuid())
+  branchId       String               @map("branch_id")
+  tableNumber    String               @map("table_number")
+  tableId        String?              @map("table_id")
+  type           String               @default("BILL")
+  status         ServiceRequestStatus @default(REQUESTED)
+  idempotencyKey String               @unique @map("idempotency_key")
+  guestAccessToken String             @unique @default(uuid()) @map("guest_access_token")
+  createdAt      DateTime             @default(now()) @map("created_at")
+  acknowledgedAt DateTime?            @map("acknowledged_at")
+  completedAt    DateTime?            @map("completed_at")
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@index([branchId, status, createdAt])
+  @@map("service_requests")
 }
 
 // ─── OrderItem ──────────────────────────────────────

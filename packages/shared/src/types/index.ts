@@ -6,6 +6,7 @@ import type {
   FulfillmentType,
   PrimaryLanguage,
   TableInputMode,
+  OperationsMode,
 } from '../constants';
 import type { DietaryLabel } from '../constants/dietary';
 
@@ -35,6 +36,7 @@ export interface BranchResponse {
   slug: string;
   qrMode: QrMode;
   serviceMode: ServiceMode;
+  operationsMode: OperationsMode;
   companyId: string;
   coverImageUrl?: string | null;
   logoUrl?: string | null;
@@ -190,6 +192,12 @@ export interface OrderResponse extends OrderMoneyResponse {
   tableId?: string | null;
   status: 'NEW' | 'SEEN' | 'SERVED';
   idempotencyKey: string;
+  /** Private capability token used only by the guest order-tracking screen. */
+  guestAccessToken?: string;
+  guestName?: string | null;
+  guestPhone?: string | null;
+  pickupNote?: string | null;
+  pickupTime?: string | null;
   createdAt: string;
   items: OrderItemResponse[];
   /** @deprecated use grandTotal */
@@ -329,6 +337,24 @@ export interface SSEOrderItemUpdatedEvent {
   };
 }
 
+export interface ServiceRequestResponse {
+  id: string;
+  branchId: string;
+  tableNumber: string;
+  tableId: string | null;
+  type: 'BILL' | 'WAITER';
+  status: 'REQUESTED' | 'ACKNOWLEDGED' | 'COMPLETED';
+  createdAt: string;
+  acknowledgedAt: string | null;
+  completedAt: string | null;
+  guestAccessToken?: string;
+}
+
+export interface SSEServiceRequestEvent {
+  type: 'service-request';
+  data: ServiceRequestResponse;
+}
+
 export interface SSEHeartbeatEvent {
   type: 'heartbeat';
   data: Record<string, never>;
@@ -343,6 +369,7 @@ export type SSEEvent =
   | SSENewOrderEvent
   | SSEOrderUpdatedEvent
   | SSEOrderItemUpdatedEvent
+  | SSEServiceRequestEvent
   | SSEHeartbeatEvent
   | SSEShutdownEvent;
 
