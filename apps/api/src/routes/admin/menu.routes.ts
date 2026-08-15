@@ -89,6 +89,7 @@ export async function adminMenuRoutes(fastify: FastifyInstance) {
 
     const menu = await fastify.prisma.menu.findFirst({
       where: { id, branch: { companyId: request.staff.companyId } },
+      include: { branch: true },
     });
     if (!menu) throw new NotFoundError('Menu not found');
 
@@ -118,6 +119,7 @@ export async function adminMenuRoutes(fastify: FastifyInstance) {
 
     const menu = await fastify.prisma.menu.findFirst({
       where: { id, branch: { companyId: request.staff.companyId } },
+      include: { branch: true },
     });
     if (!menu) throw new NotFoundError('Menu not found');
 
@@ -129,13 +131,23 @@ export async function adminMenuRoutes(fastify: FastifyInstance) {
     }
 
     await fastify.prisma.$transaction(async (tx) => {
+      const now = new Date();
       await tx.menu.updateMany({
         where: { branchId: menu.branchId, status: 'PUBLISHED' },
-        data: { status: 'ARCHIVED', archivedAt: new Date() },
+        data: { status: 'ARCHIVED', archivedAt: now },
       });
       await tx.menu.update({
         where: { id },
-        data: { status: 'PUBLISHED', publishedAt: new Date(), archivedAt: null },
+        data: { status: 'PUBLISHED', publishedAt: now, archivedAt: null },
+      });
+      await tx.branch.update({
+        where: { id: menu.branchId },
+        data: {
+          setupStep: 7,
+          setupStartedAt: menu.branch.setupStartedAt ?? now,
+          setupCompletedAt: menu.branch.setupCompletedAt ?? now,
+          firstPublishedAt: menu.branch.firstPublishedAt ?? now,
+        },
       });
     });
 
@@ -147,6 +159,7 @@ export async function adminMenuRoutes(fastify: FastifyInstance) {
 
     const menu = await fastify.prisma.menu.findFirst({
       where: { id, branch: { companyId: request.staff.companyId } },
+      include: { branch: true },
     });
     if (!menu) throw new NotFoundError('Menu not found');
 
@@ -238,6 +251,7 @@ export async function adminMenuRoutes(fastify: FastifyInstance) {
       where: { id, branch: { companyId: request.staff.companyId } },
       include: {
         sections: { include: { items: { include: { modifierGroups: true } } } },
+        branch: true,
       },
     });
     if (!menu) throw new NotFoundError('Menu not found');
@@ -273,7 +287,10 @@ export async function adminMenuRoutes(fastify: FastifyInstance) {
 
     await fastify.prisma.branch.update({
       where: { id: menu.branchId },
-      data: { setupDraftBackupJson: backupJson },
+      data: {
+        setupDraftBackupJson: backupJson,
+        setupStep: Math.max(3, menu.branch.setupStep),
+      },
     });
 
     await fastify.prisma.$transaction(async (tx) => {

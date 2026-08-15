@@ -56,11 +56,17 @@ export async function adminBranchRoutes(fastify: FastifyInstance) {
     const basicsComplete = Boolean(branch.name.trim() && branch.restaurantType);
     const modeComplete = branch.setupStep >= 2;
     const menuComplete = sellableItemCount > 0;
+    const profileComplete = Boolean(
+      branch.phone || branch.address || branch.logoUrl || branch.description || branch.tagline
+    );
+    const qrComplete = branch.setupStep >= 6;
     const published = menu?.status === 'PUBLISHED' && sellableItemCount > 0;
     const completedSteps = [
       ...(basicsComplete ? [1] : []),
       ...(modeComplete ? [2] : []),
       ...(menuComplete ? [3, 4] : []),
+      ...(profileComplete ? [5] : []),
+      ...(qrComplete ? [6] : []),
       ...(published ? [7] : []),
     ];
     const blockingIssues: string[] = [];
@@ -153,10 +159,14 @@ export async function adminBranchRoutes(fastify: FastifyInstance) {
       patch.serviceMode = qrModeToServiceMode(data.qrMode);
     }
     if (data.setupStep !== undefined) {
-      if (data.setupStep > 0 && !existing.setupStartedAt) {
+      // Setup milestones are cumulative. A later profile edit must not send a
+      // branch back to an earlier onboarding state.
+      const setupStep = Math.max(existing.setupStep, data.setupStep);
+      patch.setupStep = setupStep;
+      if (setupStep > 0 && !existing.setupStartedAt) {
         patch.setupStartedAt = new Date();
       }
-      if (data.setupStep === 7) {
+      if (setupStep === 7 && !existing.setupCompletedAt) {
         patch.setupCompletedAt = new Date();
       }
     }

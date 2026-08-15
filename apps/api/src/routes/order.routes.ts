@@ -9,9 +9,21 @@ import {
   validateAndPriceOrderLines,
   buildOrderMoney,
   formatOrderResponse,
+  formatGuestOrderResponse,
 } from '../services/order.service.js';
 
 export async function orderRoutes(fastify: FastifyInstance) {
+  fastify.get('/:id/tracking', async (request: any, reply) => {
+    const { id } = request.params;
+    const { token } = request.query;
+    if (!token) throw new ValidationError('Tracking token is required');
+    const order = await fastify.prisma.order.findFirst({
+      where: { id, guestAccessToken: token }, include: { items: true },
+    });
+    if (!order) throw new NotFoundError('Order not found');
+    return reply.status(200).send(formatGuestOrderResponse(order));
+  });
+
   fastify.post('/', async (request: any, reply) => {
     const data = createOrderSchema.parse(request.body);
 
@@ -50,6 +62,10 @@ export async function orderRoutes(fastify: FastifyInstance) {
             tableId: fulfillment.tableId,
             fulfillmentType: fulfillment.fulfillmentType,
             idempotencyKey: data.idempotencyKey,
+            guestName: data.guestName,
+            guestPhone: data.guestPhone,
+            pickupNote: data.pickupNote,
+            pickupTime: data.pickupTime,
             status: 'NEW',
             currency: money.currency,
             subtotal: money.subtotal,

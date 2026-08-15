@@ -281,6 +281,39 @@ export function formatOrderResponse(order: any) {
     ...order,
     ...money,
     total: money.grandTotal,
+    guestAccessToken: order.guestAccessToken,
+    guestName: order.guestName,
+    guestPhone: order.guestPhone,
+    pickupNote: order.pickupNote,
+    pickupTime: order.pickupTime,
     items,
+  };
+}
+
+/** Minimal response for a public guest tracking link. Never expose staff/internal fields. */
+export function formatGuestOrderResponse(order: any) {
+  const formatted = formatOrderResponse(order);
+  return {
+    id: formatted.id,
+    tableNumber: formatted.tableNumber,
+    fulfillmentType: formatted.fulfillmentType,
+    status: formatted.status,
+    createdAt: formatted.createdAt,
+    currency: formatted.currency,
+    subtotal: formatted.subtotal,
+    serviceChargeAmount: formatted.serviceChargeAmount,
+    vatAmount: formatted.vatAmount,
+    grandTotal: formatted.grandTotal,
+    total: formatted.total,
+    items: formatted.items.map((item: any) => ({
+      id: item.id,
+      itemNameSnapshot: item.itemNameSnapshot,
+      itemNameAmSnapshot: item.itemNameAmSnapshot,
+      modifiersSnapshot: item.modifiersSnapshot,
+      lineTotal: item.lineTotal,
+      quantity: item.quantity,
+      notes: item.notes,
+      status: item.status,
+    })),
   };
 }

@@ -1,6 +1,16 @@
 import dotenv from 'dotenv';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 dotenv.config({ path: path.resolve(process.cwd(), '../../.env') });
+dotenv.config();
+
 import * as Sentry from '@sentry/node';
 
 if (process.env.SENTRY_DSN) {
@@ -29,6 +39,7 @@ import { menuRoutes } from './routes/menu.routes.js';
 import { orderRoutes } from './routes/order.routes.js';
 import { sseRoutes } from './routes/sse.routes.js';
 import { sseService } from './services/sse.service.js';
+import { serviceRequestRoutes } from './routes/service-request.routes.js';
 import { kitchenRoutes } from './routes/kitchen.routes.js';
 import { adminUpsellRoutes } from './routes/admin/upsell.routes.js';
 import { superAdminRoutes } from './routes/super-admin.routes.js';
@@ -42,10 +53,6 @@ const prisma = new PrismaClient();
 const fastify = Fastify({
   logger: {
     level: process.env.LOG_LEVEL || 'info',
-    transport:
-      process.env.NODE_ENV !== 'production'
-        ? { target: 'pino-pretty', options: { colorize: true } }
-        : undefined,
   },
 });
 
@@ -140,12 +147,11 @@ await fastify.register(adminStaffRoutes, { prefix: '/api/admin/staff' });
 await fastify.register(adminUploadRoutes, { prefix: '/api/admin/upload' });
 await fastify.register(menuRoutes, { prefix: '/api/branches' });
 await fastify.register(orderRoutes, { prefix: '/api/orders' });
+await fastify.register(serviceRequestRoutes, { prefix: '/api/service-requests' });
 await fastify.register(sseRoutes, { prefix: '/api/branches' });
 await fastify.register(kitchenRoutes, { prefix: '/api/kitchen' });
 await fastify.register(adminUpsellRoutes, { prefix: '/api/admin' });
 await fastify.register(superAdminRoutes, { prefix: '/api/super-admin' });
-
-
 
 // ─── Graceful Shutdown ──────────────────────────────
 
@@ -181,12 +187,13 @@ export { fastify, prisma };
 if (process.env.NODE_ENV !== 'test') {
   try {
     await prisma.$connect();
-    fastify.log.info('Database connected');
+    console.log('✅ Database connected');
 
     const port = parseInt(process.env.PORT || '3001', 10);
-    await fastify.listen({ port, host: '0.0.0.0' });
+    const address = await fastify.listen({ port, host: '0.0.0.0' });
+    console.log(`🚀 API Server running on port ${port} (${address})`);
   } catch (err) {
-    fastify.log.error(err);
+    console.error('❌ Server startup error:', err);
     await prisma.$disconnect();
     process.exit(1);
   }
