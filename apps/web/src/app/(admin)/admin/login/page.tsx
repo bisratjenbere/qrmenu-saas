@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useAuth } from '@/hooks/use-auth';
+import { apiClient } from '@/lib/api-client';
 import { useRouter } from 'next/navigation';
 
 export default function AdminLogin() {

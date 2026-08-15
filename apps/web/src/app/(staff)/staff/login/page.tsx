@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter } from 'next/navigation';
+import { apiClient } from '@/lib/api-client';
 
 export default function StaffLogin() {
   const [email, setEmail] = useState('');
@@ -13,7 +14,8 @@ export default function StaffLogin() {
     e.preventDefault();
     try {
       await login({ email, password });
-      router.push('/staff/dashboard');
+      const { operationsMode } = await apiClient.fetchOperationsMode();
+      router.push(operationsMode === 'KITCHEN_AND_SERVICE' ? '/staff/dashboard' : '/staff/operations');
     } catch (e: any) {
       alert(e.message || 'Login failed');
     }

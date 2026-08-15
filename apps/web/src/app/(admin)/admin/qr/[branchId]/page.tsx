@@ -185,6 +185,13 @@ export default function QRAdmin() {
   const [languageMode, setLanguageMode] = useState<LanguageMode>('dual');
   const [previewTable, setPreviewTable] = useState('01');
 
+  const handlePrint = () => {
+    if (!qrReady) return;
+    void apiClient.updateBranch(branchId, { setupStep: 6 })
+      .catch(error => console.error('Unable to record QR setup progress', error));
+    window.print();
+  };
+
   const generateQrDataUrls = useCallback(async (
     branchSlug: string,
     tableList: TableResponse[],
@@ -202,10 +209,8 @@ export default function QRAdmin() {
       urls['single'] = await QRCode.toDataURL(`${APP_URL}/${branchSlug}`, opts);
     } else {
       for (const t of tableList) {
-        urls[t.id] = await QRCode.toDataURL(
-          `${APP_URL}/${branchSlug}?table=${encodeURIComponent(t.label)}`,
-          opts
-        );
+        if (!t.qrToken) throw new Error(`Table ${t.label} is missing its secure QR token`);
+        urls[t.id] = await QRCode.toDataURL(`${APP_URL}/${branchSlug}/t/${t.qrToken}`, opts);
       }
     }
     setQrDataUrls(urls);
@@ -847,7 +852,7 @@ export default function QRAdmin() {
         </div>
         <button
           className="btn btn-primary"
-          onClick={() => window.print()}
+          onClick={handlePrint}
           disabled={!qrReady}
           style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1.5rem', opacity: qrReady ? 1 : 0.5 }}
         >

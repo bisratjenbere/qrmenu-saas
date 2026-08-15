@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { Check, ChevronLeft, ChevronRight, MapPin, MenuSquare, QrCode, Store, UtensilsCrossed } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import type { BranchResponse, OnboardingStatusResponse } from '@qrmenu/shared';
-import { ServiceMode, type ServiceMode as ServiceModeValue } from '@qrmenu/shared';
+import { ServiceMode, OperationsMode, type ServiceMode as ServiceModeValue, type OperationsMode as OperationsModeValue } from '@qrmenu/shared';
 import styles from './onboarding.module.css';
 
 const restaurantTypes = [
@@ -46,7 +46,7 @@ export default function BranchOnboardingPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [basics, setBasics] = useState({ name: '', restaurantType: '', primaryLanguage: 'AM', address: '', phone: '' });
-  const [experience, setExperience] = useState<{ serviceMode: ServiceModeValue; enableTakeaway: boolean; whatsappNumber: string; tableCount: number }>({ serviceMode: ServiceMode.SINGLE_QR_SELF_ORDER, enableTakeaway: true, whatsappNumber: '', tableCount: 10 });
+  const [experience, setExperience] = useState<{ serviceMode: ServiceModeValue; operationsMode: OperationsModeValue; enableTakeaway: boolean; whatsappNumber: string; tableCount: number }>({ serviceMode: ServiceMode.SINGLE_QR_SELF_ORDER, operationsMode: OperationsMode.SIMPLE_SERVICE, enableTakeaway: true, whatsappNumber: '', tableCount: 10 });
 
   useEffect(() => {
     Promise.all([apiClient.fetchBranches(), apiClient.fetchOnboardingStatus(branchId)])
@@ -64,6 +64,7 @@ export default function BranchOnboardingPage() {
         });
         setExperience({
           serviceMode: found.serviceMode,
+          operationsMode: found.operationsMode || OperationsMode.SIMPLE_SERVICE,
           enableTakeaway: found.enableTakeaway ?? true,
           whatsappNumber: found.whatsappNumber || '',
           tableCount: 10,
@@ -100,6 +101,7 @@ export default function BranchOnboardingPage() {
     try {
       await apiClient.updateBranch(branchId, {
         serviceMode: experience.serviceMode,
+        operationsMode: experience.operationsMode,
         enableTakeaway: experience.enableTakeaway,
         whatsappNumber: experience.whatsappNumber.trim() || null,
         setupStep: 2,
@@ -107,7 +109,7 @@ export default function BranchOnboardingPage() {
       if (experience.serviceMode === ServiceMode.PER_TABLE_QR && (status?.tableCount || 0) === 0) {
         await apiClient.generateTables(branchId, experience.tableCount);
       }
-      router.push(`/admin/menus/${branchId}`);
+      router.push(`/admin/setup/${branchId}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to save the guest experience.');
     } finally {
@@ -155,6 +157,7 @@ export default function BranchOnboardingPage() {
             <p className={styles.lead}>Choose one setup for this branch. The menu stays the same if your service style changes later.</p>
             <div className={styles.modeGrid}>{guestModes.map(({ value, icon: Icon, title, description }) => <button type="button" key={value} className={`${styles.modeCard} ${experience.serviceMode === value ? styles.selected : ''}`} onClick={() => setExperience(current => ({ ...current, serviceMode: value }))}><span><Icon size={22} /></span><b>{title}</b><p>{description}</p></button>)}</div>
             <div className={styles.experienceFields}>
+              <label>How does your team work?<select value={experience.operationsMode} onChange={event => setExperience(current => ({ ...current, operationsMode: event.target.value as OperationsModeValue }))}><option value={OperationsMode.SIMPLE_SERVICE}>One person handles orders and service</option><option value={OperationsMode.TABLE_SERVICE}>Team prepares and serves from one screen</option><option value={OperationsMode.KITCHEN_AND_SERVICE}>Separate kitchen and waiter team</option></select><small>Small cafés should start with one person handles orders and service.</small></label>
               {experience.serviceMode !== ServiceMode.MENU_ONLY && <label className={styles.toggle}><input type="checkbox" checked={experience.enableTakeaway} onChange={event => setExperience(current => ({ ...current, enableTakeaway: event.target.checked }))} /><span><b>Allow takeaway</b><small>Guests can choose takeaway when they open the shared QR.</small></span></label>}
               <label>WhatsApp number <span>(optional)</span><input value={experience.whatsappNumber} onChange={event => setExperience(current => ({ ...current, whatsappNumber: event.target.value }))} placeholder="+251…" /></label>
               {experience.serviceMode === ServiceMode.PER_TABLE_QR && <label>How many table QR codes?<input required min="1" max="200" type="number" value={experience.tableCount} onChange={event => setExperience(current => ({ ...current, tableCount: Math.max(1, Number(event.target.value) || 1) }))} /><small>We will create secure codes for these tables. You can add more later.</small></label>}

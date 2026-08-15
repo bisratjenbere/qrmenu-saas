@@ -1,11 +1,12 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { SSEEvent, OrderResponse } from '@qrmenu/shared';
+import { SSEEvent, OrderResponse, ServiceRequestResponse } from '@qrmenu/shared';
 
 export function useSSE(branchId: string | null, token: string | null, callbacks: {
   onNewOrder: (order: OrderResponse) => void;
   onOrderUpdated: (data: { id: string, status: string }) => void;
   onOrderItemUpdated?: (data: { id: string, orderId: string, status: string }) => void;
+  onServiceRequest?: (request: ServiceRequestResponse) => void;
   onReconnect?: () => void;
 }) {
   const [status, setStatus] = useState<'connecting' | 'connected' | 'reconnecting' | 'disconnected'>('disconnected');
@@ -34,6 +35,8 @@ export function useSSE(branchId: string | null, token: string | null, callbacks:
             callbacks.onOrderUpdated(event.data);
           } else if (event.type === 'order-item-updated' && callbacks.onOrderItemUpdated) {
             callbacks.onOrderItemUpdated(event.data);
+          } else if (event.type === 'service-request' && callbacks.onServiceRequest) {
+            callbacks.onServiceRequest(event.data);
           }
         } catch (err) {}
       };

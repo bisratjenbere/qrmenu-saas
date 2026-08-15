@@ -12,6 +12,7 @@ import {
   TemplateImpactPreview,
   FulfillmentType,
   CreateOrderInput,
+  CreateBillRequestInput,
   LoginInput,
   OnboardingStatusResponse,
 } from '@qrmenu/shared';
@@ -56,8 +57,17 @@ export const apiClient = {
     ),
   createOrder: (data: CreateOrderInput) =>
     fetchApi<OrderResponse>('/orders', { method: 'POST', body: JSON.stringify(data) }),
+  fetchGuestOrder: (id: string, token: string) =>
+    fetchApi<OrderResponse>(`/orders/${id}/tracking?token=${encodeURIComponent(token)}`),
+  createBillRequest: (data: CreateBillRequestInput) =>
+    fetchApi<import('@qrmenu/shared').ServiceRequestResponse>('/service-requests/bill', { method: 'POST', body: JSON.stringify(data) }),
+  createWaiterRequest: (data: CreateBillRequestInput) =>
+    fetchApi<import('@qrmenu/shared').ServiceRequestResponse>('/service-requests/waiter', { method: 'POST', body: JSON.stringify(data) }),
+  fetchServiceRequestStatus: (id: string, token: string) =>
+    fetchApi<{ id: string; status: 'REQUESTED' | 'ACKNOWLEDGED' | 'COMPLETED' }>(`/service-requests/${id}/status?token=${encodeURIComponent(token)}`),
   login: (data: LoginInput) =>
     fetchApi<LoginResponse>(`/auth/login`, { method: 'POST', body: JSON.stringify(data) }),
+  fetchOperationsMode: () => fetchApi<{ operationsMode: string }>('/auth/operations-mode'),
 
   fetchBranches: () => fetchApi<BranchResponse[]>('/admin/branches'),
   createBranch: (data: Record<string, unknown>) =>
@@ -79,6 +89,12 @@ export const apiClient = {
       method: 'PATCH',
       body: JSON.stringify({ status }),
     }),
+  fetchServiceRequests: (branchId: string) =>
+    fetchApi<import('@qrmenu/shared').ServiceRequestResponse[]>(`/service-requests?branchId=${branchId}`),
+  acknowledgeServiceRequest: (id: string) =>
+    fetchApi<import('@qrmenu/shared').ServiceRequestResponse>(`/service-requests/${id}/acknowledge`, { method: 'PATCH' }),
+  completeServiceRequest: (id: string) =>
+    fetchApi<import('@qrmenu/shared').ServiceRequestResponse>(`/service-requests/${id}/complete`, { method: 'PATCH' }),
 
   fetchMenuAdmin: (branchId: string) =>
     fetchApi<MenuResponse[]>(`/admin/branches/${branchId}/menu`),

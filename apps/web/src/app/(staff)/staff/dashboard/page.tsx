@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { useSSE } from '@/hooks/use-sse';
-import { OrderResponse } from '@qrmenu/shared';
+import { OrderResponse, ServiceRequestResponse } from '@qrmenu/shared';
 import { OrderStatus } from '@qrmenu/shared';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
@@ -11,14 +11,16 @@ export default function Dashboard() {
   const { staff, token, isLoading, logout } = useAuth();
   const router = useRouter();
   const [orders, setOrders] = useState<OrderResponse[]>([]);
+  const [billRequests, setBillRequests] = useState<ServiceRequestResponse[]>([]);
   const [filterMode, setFilterMode] = useState<'today' | 'all'>('today');
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const fetchOrders = async () => {
     if (staff?.branchId) {
       try {
-        const fetched = await apiClient.fetchOrders(staff.branchId);
+        const [fetched, requests] = await Promise.all([apiClient.fetchOrders(staff.branchId), apiClient.fetchServiceRequests(staff.branchId)]);
         setOrders(fetched);
+        setBillRequests(requests);
       } catch (e) {
         console.error('Failed to fetch orders:', e);
       }
@@ -43,6 +45,14 @@ export default function Dashboard() {
     },
     onOrderUpdated: ({ id, status }) => {
       setOrders(prev => prev.map(o => o.id === id ? { ...o, status: status as any } : o));
+    },
+    onServiceRequest: (request) => {
+      setBillRequests(prev => request.status === 'ACKNOWLEDGED'
+        ? prev.filter(item => item.id !== request.id)
+        : prev.some(item => item.id === request.id) ? prev : [request, ...prev]);
+      if (request.status === 'ACKNOWLEDGED') return;
+      audioRef.current?.play().catch(() => undefined);
+      if (Notification.permission === 'granted') new Notification(`Bill requested - Table ${request.tableNumber}`);
     },
     onReconnect: () => {
       fetchOrders();
@@ -69,6 +79,24 @@ export default function Dashboard() {
       setOrders(prev => prev.map(o => o.id === id ? { ...o, status: status as any } : o));
     } catch (e) {
       console.error('Failed to update status:', e);
+    }
+  };
+
+  const acknowledgeBillRequest = async (id: string) => {
+    try {
+      await apiClient.acknowledgeServiceRequest(id);
+      setBillRequests(prev => prev.filter(request => request.id !== id));
+    } catch (e) {
+      console.error('Failed to acknowledge bill request:', e);
+    }
+  };
+
+  const completeBillRequest = async (id: string) => {
+    try {
+      await apiClient.completeServiceRequest(id);
+      setBillRequests(prev => prev.filter(request => request.id !== id));
+    } catch (e) {
+      console.error('Failed to complete bill request:', e);
     }
   };
 
@@ -134,6 +162,24 @@ export default function Dashboard() {
         <div style={{ background: 'var(--color-warning)', color: 'black', padding: '0.5rem', textAlign: 'center' }}>
           Connection lost. Reconnecting...
         </div>
+      )}
+
+      {billRequests.length > 0 && (
+        <section style={{ padding: '1rem 2rem', background: '#fef3c7', color: '#451a03' }} aria-label="Bill requests">
+          <strong>Bill requests ({billRequests.length})</strong>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginTop: '0.5rem' }}>
+            {billRequests.map(request => (
+              <div key={request.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#fff', padding: '0.5rem 0.75rem', borderRadius: '0.4rem' }}>
+                <span>{request.type === 'WAITER' ? 'Waiter requested' : 'Bill requested'} · Table {request.tableNumber} · {new Date(request.createdAt).toLocaleTimeString()}</span>
+                {request.status === 'REQUESTED' ? (
+                  <button className="btn" onClick={() => acknowledgeBillRequest(request.id)}>Acknowledge</button>
+                ) : (
+                  <button className="btn" onClick={() => completeBillRequest(request.id)}>Complete</button>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', padding: '1rem', flex: 1, overflow: 'hidden' }}>
