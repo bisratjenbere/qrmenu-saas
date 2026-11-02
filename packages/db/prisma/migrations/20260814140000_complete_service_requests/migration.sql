@@ -1,2 +1,0 @@
-ALTER TYPE "ServiceRequestStatus" ADD VALUE IF NOT EXISTS 'COMPLETED';
-ALTER TABLE "service_requests" ADD COLUMN IF NOT EXISTS "completed_at" TIMESTAMP(3);
