@@ -19,7 +19,8 @@ export function useSSE(branchId: string | null, token: string | null, callbacks:
 
     const connect = () => {
       setStatus(prev => prev === 'disconnected' ? 'connecting' : 'reconnecting');
-      sse = new EventSource(`/api/branches/${branchId}/orders/stream?token=${token}`);
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || '';
+      sse = new EventSource(`${apiBase}/api/branches/${branchId}/orders/stream?token=${encodeURIComponent(token)}`);
 
       sse.onopen = () => {
         setStatus('connected');

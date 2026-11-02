@@ -17,7 +17,11 @@ import {
   OnboardingStatusResponse,
 } from '@qrmenu/shared';
 
-const BASE_URL = typeof window !== 'undefined' ? '' : 'http://localhost:3001';
+// Browser API calls need the deployed API's public origin when the frontend and API
+// are hosted separately. Local development can keep using the Next.js rewrite.
+const BASE_URL = typeof window !== 'undefined'
+  ? (process.env.NEXT_PUBLIC_API_URL || '')
+  : (process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001');
 
 async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   let token = '';
