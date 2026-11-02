@@ -13,8 +13,8 @@ import {
   TableInputMode,
   FulfillmentType,
   PrimaryLanguage,
-} from '../constants';
-import { ALL_DIETARY_LABELS } from '../constants/dietary';
+} from '../constants.js';
+import { ALL_DIETARY_LABELS } from '../constants/dietary.js';
 
 // ─── Auth ───────────────────────────────────────────
 

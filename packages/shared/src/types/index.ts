@@ -7,8 +7,8 @@ import type {
   PrimaryLanguage,
   TableInputMode,
   OperationsMode,
-} from '../constants';
-import type { DietaryLabel } from '../constants/dietary';
+} from '../constants.js';
+import type { DietaryLabel } from '../constants/dietary.js';
 
 export interface ModifierOptionResponse {
   id: string;

@@ -1,4 +1,4 @@
-import { Locale } from './admin-translations';
+import { Locale } from './admin-translations.js';
 
 export interface CustomerTranslations {
   [key: string]: { EN: string; AM: string };
